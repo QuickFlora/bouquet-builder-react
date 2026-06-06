@@ -6,6 +6,7 @@ const NAV=[
   ['production','ti-tools','Production','ops'],
   ['pack','ti-package','Pack & ship','ops'],
   ['deliveries','ti-truck-delivery','Deliveries','ops'],
+  ['florabot','ti-robot','FloraBot','ops'],
   ['catalog','ti-list-details','Catalog & recipes','setup'],
   ['inventory','ti-building-warehouse','Inventory','setup'],
 ]
