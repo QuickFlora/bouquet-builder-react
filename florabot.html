@@ -512,6 +512,19 @@ function buildPivot(){
     armPivots.push(ag);
   }
 }
+/* ---- revolved glass vase (LatheGeometry profile: foot -> bulged body -> neck -> flared rim) ---- */
+function makeVase(px,py,pz){
+  const g=new THREE.Group();g.position.set(px,py,pz);
+  const prof=[[0.001,0.000],[0.036,0.000],[0.052,0.013],[0.045,0.026],
+    [0.060,0.052],[0.080,0.082],[0.074,0.112],[0.050,0.144],
+    [0.049,0.154],[0.067,0.176],[0.063,0.186]];
+  const pts=prof.map(p=>new THREE.Vector2(p[0],p[1]));
+  const geo=new THREE.LatheGeometry(pts,64);
+  const glass=new THREE.MeshStandardMaterial({color:0xdfeaf0,roughness:0.07,metalness:0.0,
+    transparent:true,opacity:0.5,side:THREE.DoubleSide});
+  const body=new THREE.Mesh(geo,glass);body.receiveShadow=true;g.add(body);
+  return g;
+}
 function initCell3d(){
   if(cell3dReady||!window.THREE||!cellHost)return;
   const W=cellHost.clientWidth||860,H=480;
@@ -527,7 +540,7 @@ function initCell3d(){
   scene.add(buildArm());
   buildPivot();
   bouquetGroup=new THREE.Group();bouquetGroup.position.set(0.44,0,0.06);scene.add(bouquetGroup);
-  const vase=cyl(0.055,0.15,mat('#cfd8d2',0.4,0.1));vase.position.y=0.075;vase.castShadow=true;vase.receiveShadow=true;bouquetGroup.add(vase);
+  scene.add(makeVase(0.44,0,0.06));
   pickGroup=new THREE.Group();pickGroup.position.set(PICK[0],0,PICK[2]);scene.add(pickGroup);
   const stand=cyl(0.019,0.026,mat('#3a4a44',0.5,0.3));stand.position.set(PICK[0],DISC_Y+DISC_T/2+0.006,PICK[2]);stand.castShadow=true;stand.receiveShadow=true;scene.add(stand);
   const cam=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.04,0.05),mat('#16302B',0.5,0.3));cam.position.set(-0.58,0.55,0.18);cam.castShadow=true;scene.add(cam);
