@@ -121,6 +121,10 @@
   @media(max-width:1000px){.builder,.plan,.assembly,.dash{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}.preview{position:static}}
   #cell3d:-webkit-full-screen{width:100vw!important;height:100vh!important}
   #cell3d:fullscreen{width:100vw!important;height:100vh!important;border-radius:0}
+  .stage{position:relative}
+  .viewbar{position:absolute;top:22px;right:22px;display:flex;gap:5px;z-index:6}
+  .viewbar button{border:1px solid var(--line);background:rgba(255,255,255,.85);color:var(--ink);font-weight:700;font-size:11.5px;padding:5px 9px;border-radius:7px;cursor:pointer}
+  .viewbar button:hover{border-color:var(--green-m);color:var(--green)}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -204,6 +208,12 @@
     <div class="assembly">
       <div class="card stage">
         <div id="cell3d" style="width:100%;height:480px;border-radius:12px;overflow:hidden;background:#f3f7f5"></div>
+        <div class="viewbar">
+          <button onclick="setView('iso')">Iso</button>
+          <button onclick="setView('front')">Front</button>
+          <button onclick="setView('top')">Top</button>
+          <button onclick="setView('side')">Side</button>
+        </div>
         <div class="controls">
           <button class="btn primary" id="runBtn" onclick="toggleRun()">▶ Run</button>
           <button class="btn ghost" onclick="resetRun()">Reset</button>
@@ -386,7 +396,7 @@ function hlSlot(i,on){const r=document.querySelector(`.seqrow[data-i="${i}"]`);i
 /* ---------------- live assembly ---------------- */
 /* ---------------- 3D assembly cell (Three.js · UR3e-style) ---------------- */
 const cellHost=document.getElementById('cell3d');
-let scene,camera,renderer,joints=[],toolGroup,fingerL,fingerR,bouquetGroup,carriedGroup=null,cell3dReady=false,pSlots=[],controls=null,aids=null;
+let scene,camera,renderer,joints=[],toolGroup,fingerL,fingerR,bouquetGroup,carriedGroup=null,cell3dReady=false,pSlots=[],controls=null,aids=null,gizmoScene=null,gizmoCam=null;
 /* ---- three identical pivot carousels (stem feeders) ---- */
 const ARMS=12, DISC_Y=0.028, DISC_R=0.12, DISC_T=0.022, ARM_LEN=0.13, ARM_R0=DISC_R-0.012;
 const STEM_LEN=0.22, GRAB_Y=STEM_LEN*0.5;            /* stem length & mid-stem grab height */
@@ -570,7 +580,11 @@ function initCell3d(){
   scene=new THREE.Scene();scene.background=new THREE.Color('#f3f7f5');
   camera=new THREE.PerspectiveCamera(44,W/H,0.1,50);camera.position.set(2.05,1.5,2.4);camera.lookAt(-0.05,0.05,0.05);
   renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));renderer.setSize(W,H);
-  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.autoClear=false;
+  // corner XYZ orientation gizmo (rendered in a small viewport, synced to the camera)
+  gizmoScene=new THREE.Scene();gizmoCam=new THREE.PerspectiveCamera(45,1,0.1,10);
+  gizmoScene.add(new THREE.AxesHelper(1));
+  gizmoScene.add(axisLabel('X','#d9482f',[1.3,0,0]));gizmoScene.add(axisLabel('Y','#2f9e44',[0,1.3,0]));gizmoScene.add(axisLabel('Z','#3b6fd6',[0,0,1.3]));
   cellHost.innerHTML='';cellHost.appendChild(renderer.domElement);
   // orbit controls (drag to rotate, scroll to zoom) — renders on change so no idle loop needed
   if(THREE.OrbitControls){controls=new THREE.OrbitControls(camera,renderer.domElement);
@@ -598,6 +612,13 @@ function onCellResize(){if(!renderer||!cellHost)return;const W=cellHost.clientWi
 function toggleAids(){if(aids){aids.visible=!aids.visible;renderCell();}}
 function toggleFull(){const el=cellHost;if(!document.fullscreenElement){(el.requestFullscreen||el.webkitRequestFullscreen||el.msRequestFullscreen).call(el);}else{document.exitFullscreen();}}
 document.addEventListener('fullscreenchange',()=>{setTimeout(onCellResize,60);});
+function axisLabel(t,color,pos){const c=document.createElement('canvas');c.width=c.height=64;const x=c.getContext('2d');
+  x.fillStyle=color;x.font='bold 46px sans-serif';x.textAlign='center';x.textBaseline='middle';x.fillText(t,32,34);
+  const tex=new THREE.CanvasTexture(c);const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:false,depthWrite:false}));
+  sp.position.set(pos[0],pos[1],pos[2]);sp.scale.setScalar(0.55);return sp;}
+function setView(name){if(!camera||!controls)return;const t=controls.target,d=camera.position.distanceTo(t);
+  const v=({iso:[1.4,0.95,1.6],front:[0,0.25,1],side:[1,0.25,0.02],top:[0.001,1,0.001]})[name]||[1.4,0.95,1.6];
+  const n=Math.hypot(v[0],v[1],v[2]);camera.position.set(t.x+v[0]/n*d,t.y+v[1]/n*d,t.z+v[2]/n*d);controls.update();renderCell();}
 function applyPose(p){if(!joints[0])return;joints[0].rotation.y=p[0];joints[1].rotation.x=p[1];joints[2].rotation.x=p[2];joints[3].rotation.x=p[3];joints[4].rotation.y=p[4];joints[5].rotation.y=p[5];}
 function buildBins(){if(!cell3dReady||!feeders.length)return;
   /* for each carousel, stand its remaining stems on arm tips. Stem m=0 sits at the station arm
@@ -646,7 +667,14 @@ function detachCarried(){if(carriedGroup&&toolGroup){toolGroup.remove(carriedGro
 function renderCell(){if(!cell3dReady)return;const o=carrying?0.009:0.022;if(fingerL)fingerL.position.x=-o;if(fingerR)fingerR.position.x=o;
   feeders.forEach(fd=>{fd.curRot+=(fd.targetRot-fd.curRot)*0.16;fd.disc.rotation.y=fd.curRot;});
   if(beltTex&&running)beltTex.offset.y-=0.02;
-  renderer.render(scene,camera);}
+  const W=cellHost.clientWidth||860,H=cellHost.clientHeight||480;
+  renderer.setScissorTest(false);renderer.setViewport(0,0,W,H);renderer.clear();renderer.render(scene,camera);
+  if(gizmoScene){const dir=new THREE.Vector3();camera.getWorldDirection(dir);
+    gizmoCam.position.copy(dir).multiplyScalar(-3.2);gizmoCam.up.copy(camera.up);gizmoCam.lookAt(0,0,0);
+    const sz=Math.max(82,Math.min(132,W*0.16));
+    renderer.setViewport(W-sz-8,8,sz,sz);renderer.setScissor(W-sz-8,8,sz,sz);renderer.setScissorTest(true);
+    renderer.clear();renderer.render(gizmoScene,gizmoCam);
+    renderer.setScissorTest(false);renderer.setViewport(0,0,W,H);}}
 function resetScene(){if(!cell3dReady)return;detachCarried();conveying=false;
   if(bouquetGroup){bouquetGroup.position.z=0.06;for(let i=bouquetGroup.children.length-1;i>=0;i--){if(bouquetGroup.children[i].userData.flower)bouquetGroup.remove(bouquetGroup.children[i]);}}
   feeders.forEach(fd=>{fd.curRot=0;fd.targetRot=0;fd.picks=0;fd.disc.rotation.y=0;});
