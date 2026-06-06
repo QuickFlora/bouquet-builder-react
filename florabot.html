@@ -383,11 +383,11 @@ function hlSlot(i,on){const r=document.querySelector(`.seqrow[data-i="${i}"]`);i
 const cellHost=document.getElementById('cell3d');
 let scene,camera,renderer,joints=[],toolGroup,fingerL,fingerR,carouselGroup,bouquetGroup,carriedGroup=null,binFlowers=[],cell3dReady=false,pickGroup=null,pickStem=null,pSlots=[];
 /* ---- pivot mechanism (left-side stem feeder) ---- */
-const PIVOT=[-0.33,0,0.16], ARMS=12, DISC_Y=0.028, DISC_R=0.12, DISC_T=0.022, ARM_LEN=0.18, ARM_R0=DISC_R-0.012;
+const PIVOT=[-0.46,0,0.16], ARMS=12, DISC_Y=0.028, DISC_R=0.12, DISC_T=0.022, ARM_LEN=0.13, ARM_R0=DISC_R-0.012;
 let armPivots=[], carouselCurRot=0;
 let stemsToBuild=[],placed=0,carrying=null,carouselRot=0,running=false,raf=null,phaseI=0,t0=0;
 const STEM_LEN=0.22, GRAB_Y=STEM_LEN*0.5;            /* stem length & mid-stem grab height */
-const PICK=[-0.33,GRAB_Y,0.16], PLACE=[0.33,0.16,0.06];
+const PICK=[-0.46,GRAB_Y,0.16], PLACE=[0.37,0.16,0.06];   /* feeder & vase moved out for clearance */
 function ik3(tx,ty,tz){const hS=0.125,a=0.244,b=0.213,tool=0.178;
   const wy=ty+tool, j1=Math.atan2(tx,tz), R=Math.hypot(tx,tz), dY=wy-hS;
   let D=Math.min(Math.hypot(R,dY),a+b-0.004);
@@ -403,9 +403,9 @@ const POSES={
      so the hand never sits above / descends through the bloom. Joint angles solved offline
      (jaw lands exactly at mid-stem, tool horizontal, fingers straddle the vertical stem).
      OVER_PICK = hand horizontal, slightly retracted toward base; AT_PICK = reach in & clamp. */
-  OVER_PICK:[-1.1193,0.6244,2.5355,-1.5891,-3.1416,0],
-  AT_PICK:[-1.1193,0.6513,2.2974,-1.3779,-3.1416,0],
-  LIFT:ik3(PICK[0],PICK[1]+0.16,PICK[2]),   /* rotate upright while lifting the stem out */
+  OVER_PICK:[-1.2361,0.757,1.9407,-1.127,-3.1416,0],
+  AT_PICK:[-1.2361,0.8637,1.6592,-0.9521,-3.1416,0],
+  LIFT:ik3(-0.22,0.30,0.14),   /* pull stem up & inward (toward base) and rotate it upright */
   CAMERA:ik3(-0.15,0.28,0.20),
   OVER_PLACE:ik3(PLACE[0],PLACE[1]+0.13,PLACE[2]),
   AT_PLACE:ik3(PLACE[0],PLACE[1],PLACE[2]),
@@ -514,7 +514,7 @@ function initCell3d(){
   if(cell3dReady||!window.THREE||!cellHost)return;
   const W=cellHost.clientWidth||860,H=480;
   scene=new THREE.Scene();scene.background=new THREE.Color('#f3f7f5');
-  camera=new THREE.PerspectiveCamera(42,W/H,0.1,50);camera.position.set(0.95,0.82,1.18);camera.lookAt(0,0.3,0.02);
+  camera=new THREE.PerspectiveCamera(42,W/H,0.1,50);camera.position.set(1.12,0.92,1.40);camera.lookAt(-0.05,0.28,0.02);
   renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));renderer.setSize(W,H);
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   cellHost.innerHTML='';cellHost.appendChild(renderer.domElement);
@@ -524,11 +524,11 @@ function initCell3d(){
   const table=new THREE.Mesh(new THREE.CylinderGeometry(1.05,1.05,0.04,48),mat('#e9efeb',0.92,0));table.position.y=-0.02;table.receiveShadow=true;scene.add(table);
   scene.add(buildArm());
   buildPivot();
-  bouquetGroup=new THREE.Group();bouquetGroup.position.set(0.33,0,0.06);scene.add(bouquetGroup);
+  bouquetGroup=new THREE.Group();bouquetGroup.position.set(0.37,0,0.06);scene.add(bouquetGroup);
   const vase=cyl(0.055,0.15,mat('#cfd8d2',0.4,0.1));vase.position.y=0.075;vase.castShadow=true;vase.receiveShadow=true;bouquetGroup.add(vase);
   pickGroup=new THREE.Group();pickGroup.position.set(PICK[0],0,PICK[2]);scene.add(pickGroup);
   const stand=cyl(0.019,0.026,mat('#3a4a44',0.5,0.3));stand.position.set(PICK[0],DISC_Y+DISC_T/2+0.006,PICK[2]);stand.castShadow=true;stand.receiveShadow=true;scene.add(stand);
-  const cam=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.04,0.05),mat('#16302B',0.5,0.3));cam.position.set(-0.33,0.46,0.16);cam.castShadow=true;scene.add(cam);
+  const cam=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.04,0.05),mat('#16302B',0.5,0.3));cam.position.set(-0.46,0.46,0.16);cam.castShadow=true;scene.add(cam);
   cell3dReady=true;applyPose(curPose);buildBins();updatePickStem();renderCell();
   window.addEventListener('resize',onCellResize);
 }
