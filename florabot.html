@@ -383,12 +383,13 @@ function hlSlot(i,on){const r=document.querySelector(`.seqrow[data-i="${i}"]`);i
 const cellHost=document.getElementById('cell3d');
 let scene,camera,renderer,joints=[],toolGroup,fingerL,fingerR,carouselGroup,bouquetGroup,carriedGroup=null,binFlowers=[],cell3dReady=false,pickGroup=null,pickStem=null,pSlots=[];
 /* ---- pivot mechanism (left-side stem feeder) ---- */
-const PIVOT=[-0.46,0,0.16], ARMS=12, DISC_Y=0.028, DISC_R=0.12, DISC_T=0.022, ARM_LEN=0.13, ARM_R0=DISC_R-0.012;
+const PIVOT=[-0.58,0,0.18], ARMS=12, DISC_Y=0.028, DISC_R=0.12, DISC_T=0.022, ARM_LEN=0.13, ARM_R0=DISC_R-0.012;
 let armPivots=[], carouselCurRot=0;
 let stemsToBuild=[],placed=0,carrying=null,carouselRot=0,running=false,raf=null,phaseI=0,t0=0;
 const STEM_LEN=0.22, GRAB_Y=STEM_LEN*0.5;            /* stem length & mid-stem grab height */
-const PICK=[-0.46,GRAB_Y,0.16], PLACE=[0.37,0.16,0.06];   /* feeder & vase moved out for clearance */
-function ik3(tx,ty,tz){const hS=0.125,a=0.244,b=0.213,tool=0.178;
+const ARM_S=1.30;   /* scale the whole arm up 30% for more reach/clearance */
+const PICK=[-0.58,GRAB_Y,0.18], PLACE=[0.44,0.16,0.06];   /* feeder & vase moved well out for clearance */
+function ik3(tx,ty,tz){const hS=0.125*ARM_S,a=0.244*ARM_S,b=0.213*ARM_S,tool=0.178*ARM_S;
   const wy=ty+tool, j1=Math.atan2(tx,tz), R=Math.hypot(tx,tz), dY=wy-hS;
   let D=Math.min(Math.hypot(R,dY),a+b-0.004);
   let c2=Math.max(-1,Math.min(1,(D*D-a*a-b*b)/(2*a*b)));
@@ -396,17 +397,17 @@ function ik3(tx,ty,tz){const hS=0.125,a=0.244,b=0.213,tool=0.178;
   const psi1=Math.atan2(dY,R)-Math.atan2(b*Math.sin(psi2),a+b*Math.cos(psi2));
   const phi2=Math.PI/2-psi1, phi3=-psi2, phi4=Math.PI-(phi2+phi3);
   return [j1,phi2,phi3,phi4,-1.5708,0];}
-const HOME=ik3(0,0.30,0.18);
+const HOME=ik3(0,0.42,0.24);
 const POSES={
   HOME:HOME,
   /* SIDE PINCH: gripper turns horizontal and reaches in from the side at mid-stem height,
      so the hand never sits above / descends through the bloom. Joint angles solved offline
      (jaw lands exactly at mid-stem, tool horizontal, fingers straddle the vertical stem).
      OVER_PICK = hand horizontal, slightly retracted toward base; AT_PICK = reach in & clamp. */
-  OVER_PICK:[-1.2361,0.757,1.9407,-1.127,-3.1416,0],
-  AT_PICK:[-1.2361,0.8637,1.6592,-0.9521,-3.1416,0],
-  LIFT:ik3(-0.22,0.30,0.14),   /* pull stem up & inward (toward base) and rotate it upright */
-  CAMERA:ik3(-0.15,0.28,0.20),
+  OVER_PICK:[-1.2699,2.6342,-2.0103,0.9469,-3.1416,0],
+  AT_PICK:[-1.2699,2.5082,-1.7612,0.8238,-3.1416,0],
+  LIFT:ik3(-0.30,0.40,0.16),   /* pull stem up & inward (toward base) and rotate it upright */
+  CAMERA:ik3(-0.20,0.40,0.24),
   OVER_PLACE:ik3(PLACE[0],PLACE[1]+0.13,PLACE[2]),
   AT_PLACE:ik3(PLACE[0],PLACE[1],PLACE[2]),
   RETRACT:ik3(PLACE[0],PLACE[1]+0.16,PLACE[2]),
@@ -469,6 +470,7 @@ function buildArm(){
   const palm=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.022,0.04),dark);palm.position.y=0.011;palm.castShadow=true;toolGroup.add(palm);
   fingerL=new THREE.Mesh(new THREE.BoxGeometry(0.012,0.05,0.03),dark);fingerL.position.set(-0.02,0.045,0);fingerL.castShadow=true;toolGroup.add(fingerL);
   fingerR=new THREE.Mesh(new THREE.BoxGeometry(0.012,0.05,0.03),dark);fingerR.position.set(0.02,0.045,0);fingerR.castShadow=true;toolGroup.add(fingerR);
+  root.scale.setScalar(ARM_S);   /* scale whole arm up 30% */
   return root;
 }
 /* ---- FloraBot 12-arm pivot feeder (T-slot pedestal + rotating disc + radial arms) ---- */
@@ -514,7 +516,7 @@ function initCell3d(){
   if(cell3dReady||!window.THREE||!cellHost)return;
   const W=cellHost.clientWidth||860,H=480;
   scene=new THREE.Scene();scene.background=new THREE.Color('#f3f7f5');
-  camera=new THREE.PerspectiveCamera(42,W/H,0.1,50);camera.position.set(1.12,0.92,1.40);camera.lookAt(-0.05,0.28,0.02);
+  camera=new THREE.PerspectiveCamera(42,W/H,0.1,50);camera.position.set(1.48,1.18,1.78);camera.lookAt(-0.06,0.34,0.02);
   renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));renderer.setSize(W,H);
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   cellHost.innerHTML='';cellHost.appendChild(renderer.domElement);
@@ -524,11 +526,11 @@ function initCell3d(){
   const table=new THREE.Mesh(new THREE.CylinderGeometry(1.05,1.05,0.04,48),mat('#e9efeb',0.92,0));table.position.y=-0.02;table.receiveShadow=true;scene.add(table);
   scene.add(buildArm());
   buildPivot();
-  bouquetGroup=new THREE.Group();bouquetGroup.position.set(0.37,0,0.06);scene.add(bouquetGroup);
+  bouquetGroup=new THREE.Group();bouquetGroup.position.set(0.44,0,0.06);scene.add(bouquetGroup);
   const vase=cyl(0.055,0.15,mat('#cfd8d2',0.4,0.1));vase.position.y=0.075;vase.castShadow=true;vase.receiveShadow=true;bouquetGroup.add(vase);
   pickGroup=new THREE.Group();pickGroup.position.set(PICK[0],0,PICK[2]);scene.add(pickGroup);
   const stand=cyl(0.019,0.026,mat('#3a4a44',0.5,0.3));stand.position.set(PICK[0],DISC_Y+DISC_T/2+0.006,PICK[2]);stand.castShadow=true;stand.receiveShadow=true;scene.add(stand);
-  const cam=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.04,0.05),mat('#16302B',0.5,0.3));cam.position.set(-0.46,0.46,0.16);cam.castShadow=true;scene.add(cam);
+  const cam=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.04,0.05),mat('#16302B',0.5,0.3));cam.position.set(-0.58,0.55,0.18);cam.castShadow=true;scene.add(cam);
   cell3dReady=true;applyPose(curPose);buildBins();updatePickStem();renderCell();
   window.addEventListener('resize',onCellResize);
 }
@@ -557,9 +559,9 @@ function addBouquetFlower(idx){const id=stemsToBuild[idx];if(!id||!cell3dReady)r
   fm.position.set(sl.x,sl.y,sl.z);const lean=sl.r*3.2;fm.rotation.set(Math.sin(sl.a)*lean,0,-Math.cos(sl.a)*lean);
   fm.scale.setScalar(0.9);bouquetGroup.add(fm);}
 function attachCarried(id){if(!cell3dReady)return;carriedGroup=flowerMesh(PARTS[id].type,PARTS[id].color);
-  carriedGroup.rotation.x=Math.PI;carriedGroup.scale.setScalar(0.85);
+  carriedGroup.rotation.x=Math.PI;carriedGroup.scale.setScalar(0.85/ARM_S);   /* counter the arm's scale so the flower stays normal size */
   /* grip the MIDDLE of the stem (bloom upright, lower stem hanging below the jaws) */
-  carriedGroup.position.set(0, 0.045 + 0.85*(STEM_LEN/2), 0);toolGroup.add(carriedGroup);}
+  carriedGroup.position.set(0, 0.045 + (0.85/ARM_S)*(STEM_LEN/2), 0);toolGroup.add(carriedGroup);}
 function detachCarried(){if(carriedGroup&&toolGroup){toolGroup.remove(carriedGroup);carriedGroup=null;}}
 function renderCell(){if(!cell3dReady)return;const o=carrying?0.009:0.022;if(fingerL)fingerL.position.x=-o;if(fingerR)fingerR.position.x=o;
   if(carouselGroup){carouselCurRot+=(carouselRot-carouselCurRot)*0.16;carouselGroup.rotation.y=carouselCurRot;}
