@@ -396,8 +396,9 @@ const ARM_S=1.30;   /* scale the whole arm up 30% for more reach/clearance */
 const FEED_R=0.607, STN_R=0.395;                     /* carousel-centre & pick-station radius from base */
 const FEED_ANG=[-2.17,-1.27,-0.37];                  /* azimuths of carousels 0,1,2 */
 let feeders=[];                                      /* built in buildFeeders() */
-let stemsToBuild=[],placed=0,carrying=null,running=false,raf=null,phaseI=0,t0=0;
+let stemsToBuild=[],placed=0,carrying=null,running=false,raf=null,phaseI=0,t0=0,conveying=false,conveyT0=0,beltTex=null;
 const PLACE=[0.44,0.16,0.06];
+const FLOOR_Y=-0.55;   /* room floor; arm base / belt top / carousel discs sit at the y=0 working plane on stands */
 function ik3(tx,ty,tz){const hS=0.125*ARM_S,a=0.244*ARM_S,b=0.213*ARM_S,tool=0.178*ARM_S;
   const wy=ty+tool, j1=Math.atan2(tx,tz), R=Math.hypot(tx,tz), dY=wy-hS;
   let D=Math.min(Math.hypot(R,dY),a+b-0.004);
@@ -489,19 +490,21 @@ function buildFeeders(){
   feeders=[];
   const alu=mat('#9fb0bb',0.4,0.7), steel=mat('#33414b',0.5,0.6), black=mat('#191f1d',0.55,0.25),
         accent=mat('#1F6F54',0.45,0.3), clampM=mat('#3a4a44',0.5,0.3);
-  const legH=DISC_Y-0.006, sp=0.07, step=Math.PI*2/ARMS;
+  const legH=DISC_Y-FLOOR_Y, sp=0.07, step=Math.PI*2/ARMS;
   for(let fi=0;fi<3;fi++){
     const ang=FEED_ANG[fi], cx=FEED_R*Math.sin(ang), cz=FEED_R*Math.cos(ang);
     const sx=STN_R*Math.sin(ang), sz=STN_R*Math.cos(ang), pickAng=ang+Math.PI;
-    // static pedestal / tower
+    // tall T-slot pedestal on a wheeled base (disc presents at the y=0 working plane)
     const tower=new THREE.Group();tower.position.set(cx,0,cz);scene.add(tower);
+    const midY=FLOOR_Y+legH/2;
     [[1,1],[1,-1],[-1,1],[-1,-1]].forEach(([ax,az])=>{
-      const leg=new THREE.Mesh(new THREE.BoxGeometry(0.015,legH,0.015),alu);leg.position.set(ax*sp,legH/2,az*sp);leg.castShadow=true;tower.add(leg);
-      const foot=new THREE.Mesh(new THREE.BoxGeometry(0.034,0.012,0.034),steel);foot.position.set(ax*sp,0.006,az*sp);foot.castShadow=true;foot.receiveShadow=true;tower.add(foot);
+      const leg=new THREE.Mesh(new THREE.BoxGeometry(0.02,legH,0.02),alu);leg.position.set(ax*sp,midY,az*sp);leg.castShadow=true;tower.add(leg);
     });
-    [[0,1],[0,-1]].forEach(([_,az])=>{const r=new THREE.Mesh(new THREE.BoxGeometry(sp*2+0.034,0.013,0.015),alu);r.position.set(0,0.0065,az*sp);r.castShadow=true;tower.add(r);});
-    [[1,0],[-1,0]].forEach(([ax])=>{const r=new THREE.Mesh(new THREE.BoxGeometry(0.015,0.013,sp*2+0.034),alu);r.position.set(ax*sp,0.0065,0);r.castShadow=true;tower.add(r);});
-    const shroud=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.085,legH,28),steel);shroud.position.y=legH/2;shroud.castShadow=true;tower.add(shroud);
+    const bp=new THREE.Mesh(new THREE.BoxGeometry(sp*2+0.08,0.03,sp*2+0.08),steel);bp.position.set(0,FLOOR_Y+0.015,0);bp.castShadow=true;bp.receiveShadow=true;tower.add(bp);
+    [[1,1],[1,-1],[-1,1],[-1,-1]].forEach(([ax,az])=>{const w=new THREE.Mesh(new THREE.CylinderGeometry(0.022,0.022,0.03,16),clampM);w.rotation.z=Math.PI/2;w.position.set(ax*(sp+0.02),FLOOR_Y+0.005,az*(sp+0.02));tower.add(w);});
+    [[0,1],[0,-1]].forEach(([_,az])=>{const r=new THREE.Mesh(new THREE.BoxGeometry(sp*2+0.04,0.014,0.016),alu);r.position.set(0,DISC_Y-0.05,az*sp);r.castShadow=true;tower.add(r);});
+    [[1,0],[-1,0]].forEach(([ax])=>{const r=new THREE.Mesh(new THREE.BoxGeometry(0.016,0.014,sp*2+0.04),alu);r.position.set(ax*sp,DISC_Y-0.05,0);r.castShadow=true;tower.add(r);});
+    const shroud=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.085,0.06,28),steel);shroud.position.y=DISC_Y-0.033;shroud.castShadow=true;tower.add(shroud);
     // rotating disc + emblem + arms
     const disc=new THREE.Group();disc.position.set(cx,DISC_Y,cz);scene.add(disc);
     const dm=new THREE.Mesh(new THREE.CylinderGeometry(DISC_R,DISC_R,DISC_T,48),black);dm.castShadow=true;dm.receiveShadow=true;disc.add(dm);
@@ -533,17 +536,45 @@ function makeVase(px,py,pz){
   const body=new THREE.Mesh(geo,glass);body.receiveShadow=true;g.add(body);
   return g;
 }
+/* ---- robot pedestal: T-slot column + wheeled base + green control cabinet (arm mounts on top at y=0) ---- */
+function buildStand(){
+  const alu=mat('#c7ced2',0.4,0.7), green=mat('#9cc089',0.5,0.2), dark=mat('#2b3a35',0.5,0.4), pnl=mat('#7fa86a',0.5,0.2);
+  const colH=0-FLOOR_Y;
+  const col=new THREE.Mesh(new THREE.BoxGeometry(0.14,colH,0.14),alu);col.position.set(0,FLOOR_Y+colH/2,0);col.castShadow=true;scene.add(col);
+  const bp=new THREE.Mesh(new THREE.BoxGeometry(0.38,0.03,0.38),dark);bp.position.set(0,FLOOR_Y+0.015,0);bp.castShadow=true;bp.receiveShadow=true;scene.add(bp);
+  [[1,1],[1,-1],[-1,1],[-1,-1]].forEach(([sx,sz])=>{const w=new THREE.Mesh(new THREE.CylinderGeometry(0.024,0.024,0.03,16),dark);w.rotation.z=Math.PI/2;w.position.set(sx*0.16,FLOOR_Y+0.006,sz*0.16);scene.add(w);});
+  // green control cabinet on its own wheeled base, beside the robot (toward camera)
+  const cab=new THREE.Mesh(new THREE.BoxGeometry(0.2,0.3,0.18),green);cab.position.set(0.0,FLOOR_Y+0.19,0.42);cab.castShadow=true;cab.receiveShadow=true;scene.add(cab);
+  const vent=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.12,0.005),pnl);vent.position.set(0,FLOOR_Y+0.21,0.51);scene.add(vent);
+  const cbp=new THREE.Mesh(new THREE.BoxGeometry(0.24,0.03,0.22),dark);cbp.position.set(0,FLOOR_Y+0.015,0.42);cbp.castShadow=true;scene.add(cbp);
+  [[1,1],[1,-1],[-1,1],[-1,-1]].forEach(([sx,sz])=>{const w=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.025,12),dark);w.rotation.z=Math.PI/2;w.position.set(sx*0.1,FLOOR_Y+0.005,0.42+sz*0.09);scene.add(w);});
+}
+/* ---- blue conveyor under the vase: belt top at y=0, stainless frame + legs to the floor; scrolls while running ---- */
+function buildConveyor(){
+  const steel=mat('#c7ced2',0.4,0.7), legH=0-FLOOR_Y;
+  const CX=0.44, CZ=0.10, W=0.34, L=1.7;
+  const body=new THREE.Mesh(new THREE.BoxGeometry(W,0.03,L),mat('#2f5f8e',0.5,0.1));body.position.set(CX,-0.016,CZ);body.castShadow=true;body.receiveShadow=true;scene.add(body);
+  // moving belt surface (scrolling stripe texture)
+  const c=document.createElement('canvas');c.width=c.height=64;const g2=c.getContext('2d');
+  g2.fillStyle='#3f6f9e';g2.fillRect(0,0,64,64);g2.fillStyle='#356088';for(let i=0;i<64;i+=16)g2.fillRect(0,i,64,7);
+  beltTex=new THREE.CanvasTexture(c);beltTex.wrapS=beltTex.wrapT=THREE.RepeatWrapping;beltTex.repeat.set(1,12);
+  const top=new THREE.Mesh(new THREE.PlaneGeometry(W,L),new THREE.MeshStandardMaterial({map:beltTex,roughness:0.55,metalness:0.0}));
+  top.rotation.x=-Math.PI/2;top.position.set(CX,0.0005,CZ);top.receiveShadow=true;scene.add(top);
+  // side rails + legs
+  [-1,1].forEach(s=>{const rail=new THREE.Mesh(new THREE.BoxGeometry(0.02,0.05,L),steel);rail.position.set(CX+s*(W/2+0.012),-0.008,CZ);rail.castShadow=true;scene.add(rail);});
+  [[-1,-1],[-1,1],[1,-1],[1,1]].forEach(([sx,sz])=>{const leg=new THREE.Mesh(new THREE.BoxGeometry(0.03,legH,0.03),steel);leg.position.set(CX+sx*(W/2-0.02),FLOOR_Y+legH/2,CZ+sz*(L/2-0.12));leg.castShadow=true;scene.add(leg);});
+}
 function initCell3d(){
   if(cell3dReady||!window.THREE||!cellHost)return;
   const W=cellHost.clientWidth||860,H=480;
   scene=new THREE.Scene();scene.background=new THREE.Color('#f3f7f5');
-  camera=new THREE.PerspectiveCamera(44,W/H,0.1,50);camera.position.set(1.72,1.42,2.05);camera.lookAt(-0.12,0.30,0.04);
+  camera=new THREE.PerspectiveCamera(44,W/H,0.1,50);camera.position.set(2.05,1.5,2.4);camera.lookAt(-0.05,0.05,0.05);
   renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));renderer.setSize(W,H);
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   cellHost.innerHTML='';cellHost.appendChild(renderer.domElement);
   // orbit controls (drag to rotate, scroll to zoom) — renders on change so no idle loop needed
   if(THREE.OrbitControls){controls=new THREE.OrbitControls(camera,renderer.domElement);
-    controls.target.set(-0.12,0.30,0.04);controls.enableDamping=false;controls.update();
+    controls.target.set(-0.05,0.05,0.05);controls.enableDamping=false;controls.update();
     controls.addEventListener('change',renderCell);}
   // view aids: ground grid (0.1 m cells) + XYZ axes at the robot base — hidden until toggled
   aids=new THREE.Group();
@@ -552,12 +583,14 @@ function initCell3d(){
   aids.visible=false;scene.add(aids);
   scene.add(new THREE.HemisphereLight(0xffffff,0x9fb2a8,0.75));
   const dir=new THREE.DirectionalLight(0xffffff,0.95);dir.position.set(1.4,2.1,1.1);dir.castShadow=true;
-  dir.shadow.mapSize.set(1024,1024);Object.assign(dir.shadow.camera,{near:0.5,far:7,left:-1.6,right:1.6,top:1.6,bottom:-1.6});scene.add(dir);
-  const table=new THREE.Mesh(new THREE.CylinderGeometry(1.05,1.05,0.04,48),mat('#e9efeb',0.92,0));table.position.y=-0.02;table.receiveShadow=true;scene.add(table);
+  dir.shadow.mapSize.set(2048,2048);Object.assign(dir.shadow.camera,{near:0.5,far:9,left:-2.6,right:2.6,top:2.6,bottom:-2.6});scene.add(dir);
+  const floor=new THREE.Mesh(new THREE.PlaneGeometry(7,7),mat('#eef2ef',0.96,0));floor.rotation.x=-Math.PI/2;floor.position.y=FLOOR_Y;floor.receiveShadow=true;scene.add(floor);
+  buildStand();
   scene.add(buildArm());
   buildFeeders();
+  buildConveyor();
   bouquetGroup=new THREE.Group();bouquetGroup.position.set(0.44,0,0.06);scene.add(bouquetGroup);
-  scene.add(makeVase(0.44,0,0.06));
+  bouquetGroup.add(makeVase(0,0,0));   /* vase rides with the bouquet so it can convey off the belt */
   cell3dReady=true;applyPose(curPose);buildBins();updatePickStem();renderCell();
   window.addEventListener('resize',onCellResize);
 }
@@ -604,7 +637,7 @@ function pyramidSlots(n){const s=[];if(n<=0)return s;
 function addBouquetFlower(idx){const id=stemsToBuild[idx];if(!id||!cell3dReady)return;
   const sl=pSlots[idx]||{x:0,y:0.15,z:0,a:0,r:0};const fm=flowerMesh(PARTS[id].type,PARTS[id].color);
   fm.position.set(sl.x,sl.y,sl.z);const lean=sl.r*3.2;fm.rotation.set(Math.sin(sl.a)*lean,0,-Math.cos(sl.a)*lean);
-  fm.scale.setScalar(0.9);bouquetGroup.add(fm);}
+  fm.userData.flower=true;fm.scale.setScalar(0.9);bouquetGroup.add(fm);}
 function attachCarried(id){if(!cell3dReady)return;carriedGroup=flowerMesh(PARTS[id].type,PARTS[id].color);
   carriedGroup.rotation.x=Math.PI;carriedGroup.scale.setScalar(0.55/ARM_S);   /* match the picked stem size, counter the arm's scale */
   /* grip the MIDDLE of the stem (bloom upright, lower stem hanging below the jaws) */
@@ -612,9 +645,10 @@ function attachCarried(id){if(!cell3dReady)return;carriedGroup=flowerMesh(PARTS[
 function detachCarried(){if(carriedGroup&&toolGroup){toolGroup.remove(carriedGroup);carriedGroup=null;}}
 function renderCell(){if(!cell3dReady)return;const o=carrying?0.009:0.022;if(fingerL)fingerL.position.x=-o;if(fingerR)fingerR.position.x=o;
   feeders.forEach(fd=>{fd.curRot+=(fd.targetRot-fd.curRot)*0.16;fd.disc.rotation.y=fd.curRot;});
+  if(beltTex&&running)beltTex.offset.y-=0.02;
   renderer.render(scene,camera);}
-function resetScene(){if(!cell3dReady)return;detachCarried();
-  for(let i=bouquetGroup.children.length-1;i>=0;i--)bouquetGroup.remove(bouquetGroup.children[i]);
+function resetScene(){if(!cell3dReady)return;detachCarried();conveying=false;
+  if(bouquetGroup){bouquetGroup.position.z=0.06;for(let i=bouquetGroup.children.length-1;i>=0;i--){if(bouquetGroup.children[i].userData.flower)bouquetGroup.remove(bouquetGroup.children[i]);}}
   feeders.forEach(fd=>{fd.curRot=0;fd.targetRot=0;fd.picks=0;fd.disc.rotation.y=0;});
   curPose=HOME.slice();prevPose=HOME.slice();applyPose(curPose);buildBins();updatePickStem();onCellResize();}
 function lerp(a,b,t){return a+(b-a)*t;}
@@ -622,6 +656,17 @@ function easi(t){return t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;}
 function step(ts){
   if(!cell3dReady)initCell3d();
   if(!t0)t0=ts;
+  if(conveying){
+    const cp=Math.min(1,(ts-conveyT0)/(1000/SPEED));
+    bouquetGroup.position.z=0.06-easi(cp)*0.85;   /* finished vase rides off down the belt */
+    renderCell();
+    if(cp>=1){   /* bring a fresh empty vase to the work position and start the next bouquet */
+      bouquetGroup.position.z=0.06;
+      for(let i=bouquetGroup.children.length-1;i>=0;i--){if(bouquetGroup.children[i].userData.flower)bouquetGroup.remove(bouquetGroup.children[i]);}
+      buildList();buildBins();updatePickStem();conveying=false;phaseI=0;t0=ts;updateProg();
+    }
+    if(running)raf=requestAnimationFrame(step);return;
+  }
   const ph=PHASES[phaseI],tp=POSES[ph.pose];
   let p=Math.min(1,(ts-t0)/(ph.d/SPEED));const e=easi(p);
   for(let i=0;i<6;i++)curPose[i]=lerp(prevPose[i],tp[i],e);
@@ -636,7 +681,7 @@ function step(ts){
     if(ph.n==='approach')onVision('approach');
     prevPose=tp.slice();phaseI++;t0=ts;
     if(phaseI>=PHASES.length){phaseI=0;
-      if(placed>=stemsToBuild.length){running=false;document.getElementById('runBtn').textContent='▶ Run';onVision('done');return;}
+      if(placed>=stemsToBuild.length){conveying=true;conveyT0=ts;onVision('done');}   /* convey finished vase, then loop */
     }
   }
   if(running)raf=requestAnimationFrame(step);
