@@ -388,7 +388,8 @@ let armPivots=[], carouselCurRot=0;
 let stemsToBuild=[],placed=0,carrying=null,carouselRot=0,running=false,raf=null,phaseI=0,t0=0;
 const STEM_LEN=0.22, GRAB_Y=STEM_LEN*0.5;            /* stem length & mid-stem grab height */
 const ARM_S=1.30;   /* scale the whole arm up 30% for more reach/clearance */
-const PICK=[-0.58,GRAB_Y,0.18], PLACE=[0.44,0.16,0.06];   /* feeder & vase moved well out for clearance */
+const PICK_ANG=1.8717;   /* arm angle (rad) that points one arm toward the robot = the pick station */
+const PICK=[-0.378,GRAB_Y,0.117], PLACE=[0.44,0.16,0.06];   /* PICK is an arm TIP facing the robot, NOT the hub centre */
 function ik3(tx,ty,tz){const hS=0.125*ARM_S,a=0.244*ARM_S,b=0.213*ARM_S,tool=0.178*ARM_S;
   const wy=ty+tool, j1=Math.atan2(tx,tz), R=Math.hypot(tx,tz), dY=wy-hS;
   let D=Math.min(Math.hypot(R,dY),a+b-0.004);
@@ -404,8 +405,8 @@ const POSES={
      so the hand never sits above / descends through the bloom. Joint angles solved offline
      (jaw lands exactly at mid-stem, tool horizontal, fingers straddle the vertical stem).
      OVER_PICK = hand horizontal, slightly retracted toward base; AT_PICK = reach in & clamp. */
-  OVER_PICK:[-1.2699,2.6342,-2.0103,0.9469,-3.1416,0],
-  AT_PICK:[-1.2699,2.5082,-1.7612,0.8238,-3.1416,0],
+  OVER_PICK:[-1.2699,1.0004,2.771,-2.2006,-3.1416,0],
+  AT_PICK:[-1.2699,0.8228,2.5693,-1.8212,-3.1416,0],
   LIFT:ik3(-0.30,0.40,0.16),   /* pull stem up & inward (toward base) and rotate it upright */
   CAMERA:ik3(-0.20,0.40,0.24),
   OVER_PLACE:ik3(PLACE[0],PLACE[1]+0.13,PLACE[2]),
@@ -504,7 +505,7 @@ function buildPivot(){
   // 12 radial arms with clamp blocks
   armPivots=[];
   for(let k=0;k<ARMS;k++){
-    const ag=new THREE.Group();ag.rotation.y=k*(Math.PI*2/ARMS);carouselGroup.add(ag);
+    const ag=new THREE.Group();ag.rotation.y=PICK_ANG+k*(Math.PI*2/ARMS);carouselGroup.add(ag);
     const arm=new THREE.Mesh(new THREE.BoxGeometry(0.012,0.012,ARM_LEN),black);
     arm.position.set(0,DISC_T/2-0.002,ARM_R0+ARM_LEN/2);arm.castShadow=true;ag.add(arm);
     const clamp=new THREE.Mesh(new THREE.BoxGeometry(0.022,0.016,0.022),clampM);
@@ -541,8 +542,8 @@ function initCell3d(){
   buildPivot();
   bouquetGroup=new THREE.Group();bouquetGroup.position.set(0.44,0,0.06);scene.add(bouquetGroup);
   scene.add(makeVase(0.44,0,0.06));
-  pickGroup=new THREE.Group();pickGroup.position.set(PICK[0],0,PICK[2]);scene.add(pickGroup);
-  const stand=cyl(0.019,0.026,mat('#3a4a44',0.5,0.3));stand.position.set(PICK[0],DISC_Y+DISC_T/2+0.006,PICK[2]);stand.castShadow=true;stand.receiveShadow=true;scene.add(stand);
+  pickGroup=new THREE.Group();pickGroup.position.set(PICK[0],DISC_Y+DISC_T/2+0.012,PICK[2]);scene.add(pickGroup);
+  /* (hub transfer clamp removed — stems are now presented & picked at the arm tips) */
   const cam=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.04,0.05),mat('#16302B',0.5,0.3));cam.position.set(-0.58,0.55,0.18);cam.castShadow=true;scene.add(cam);
   cell3dReady=true;applyPose(curPose);buildBins();updatePickStem();renderCell();
   window.addEventListener('resize',onCellResize);
@@ -551,14 +552,15 @@ function onCellResize(){if(!renderer||!cellHost)return;const W=cellHost.clientWi
 function applyPose(p){if(!joints[0])return;joints[0].rotation.y=p[0];joints[1].rotation.x=p[1];joints[2].rotation.x=p[2];joints[3].rotation.x=p[3];joints[4].rotation.y=p[4];joints[5].rotation.y=p[5];}
 function buildBins(){if(!cell3dReady||!armPivots.length)return;
   binFlowers.forEach(f=>{if(f.parent)f.parent.remove(f);});binFlowers=[];
-  let slot=0;
+  /* place each remaining stem standing on an arm tip; arm -(i) trails the station arm -(placed),
+     so as the disc indexes one slot the next loaded arm arrives at the pick station */
   for(let i=placed+1;i<stemsToBuild.length;i++){const id=stemsToBuild[i];if(!id)continue;
-    const ag=armPivots[slot%ARMS];slot++;
+    const ag=armPivots[((-i)%ARMS+ARMS)%ARMS];
     const fm=flowerMesh(PARTS[id].type,PARTS[id].color);fm.scale.setScalar(0.55);
     fm.position.set(0,DISC_T/2+0.012,ARM_R0+ARM_LEN*0.8);
     ag.add(fm);binFlowers.push(fm);}}
 function updatePickStem(){if(!cell3dReady)return;if(pickStem){pickGroup.remove(pickStem);pickStem=null;}
-  const id=stemsToBuild[placed];if(id&&!carrying){pickStem=flowerMesh(PARTS[id].type,PARTS[id].color);pickStem.scale.setScalar(0.85);pickGroup.add(pickStem);}}
+  const id=stemsToBuild[placed];if(id&&!carrying){pickStem=flowerMesh(PARTS[id].type,PARTS[id].color);pickStem.scale.setScalar(0.55);pickGroup.add(pickStem);}}
 function pyramidSlots(n){const s=[];if(n<=0)return s;
   // tiered cone: wide even ring at the rim, narrowing to a single apex
   let rem=n,tier=0;const tiers=[];
@@ -572,9 +574,9 @@ function addBouquetFlower(idx){const id=stemsToBuild[idx];if(!id||!cell3dReady)r
   fm.position.set(sl.x,sl.y,sl.z);const lean=sl.r*3.2;fm.rotation.set(Math.sin(sl.a)*lean,0,-Math.cos(sl.a)*lean);
   fm.scale.setScalar(0.9);bouquetGroup.add(fm);}
 function attachCarried(id){if(!cell3dReady)return;carriedGroup=flowerMesh(PARTS[id].type,PARTS[id].color);
-  carriedGroup.rotation.x=Math.PI;carriedGroup.scale.setScalar(0.85/ARM_S);   /* counter the arm's scale so the flower stays normal size */
+  carriedGroup.rotation.x=Math.PI;carriedGroup.scale.setScalar(0.55/ARM_S);   /* match the picked stem size, counter the arm's scale */
   /* grip the MIDDLE of the stem (bloom upright, lower stem hanging below the jaws) */
-  carriedGroup.position.set(0, 0.045 + (0.85/ARM_S)*(STEM_LEN/2), 0);toolGroup.add(carriedGroup);}
+  carriedGroup.position.set(0, 0.045 + (0.55/ARM_S)*(STEM_LEN/2), 0);toolGroup.add(carriedGroup);}
 function detachCarried(){if(carriedGroup&&toolGroup){toolGroup.remove(carriedGroup);carriedGroup=null;}}
 function renderCell(){if(!cell3dReady)return;const o=carrying?0.009:0.022;if(fingerL)fingerL.position.x=-o;if(fingerR)fingerR.position.x=o;
   if(carouselGroup){carouselCurRot+=(carouselRot-carouselCurRot)*0.16;carouselGroup.rotation.y=carouselCurRot;}
