@@ -386,7 +386,8 @@ let scene,camera,renderer,joints=[],toolGroup,fingerL,fingerR,carouselGroup,bouq
 const PIVOT=[-0.33,0,0.16], ARMS=12, DISC_Y=0.028, DISC_R=0.12, DISC_T=0.022, ARM_LEN=0.18, ARM_R0=DISC_R-0.012;
 let armPivots=[], carouselCurRot=0;
 let stemsToBuild=[],placed=0,carrying=null,carouselRot=0,running=false,raf=null,phaseI=0,t0=0;
-const PICK=[-0.33,0.05,0.16], PLACE=[0.33,0.16,0.06];
+const STEM_LEN=0.22, GRAB_Y=STEM_LEN*0.5;            /* stem length & mid-stem grab height */
+const PICK=[-0.33,GRAB_Y,0.16], PLACE=[0.33,0.16,0.06];
 function ik3(tx,ty,tz){const hS=0.125,a=0.244,b=0.213,tool=0.178;
   const wy=ty+tool, j1=Math.atan2(tx,tz), R=Math.hypot(tx,tz), dY=wy-hS;
   let D=Math.min(Math.hypot(R,dY),a+b-0.004);
@@ -398,9 +399,11 @@ function ik3(tx,ty,tz){const hS=0.125,a=0.244,b=0.213,tool=0.178;
 const HOME=ik3(0,0.30,0.18);
 const POSES={
   HOME:HOME,
-  OVER_PICK:ik3(PICK[0],PICK[1]+0.13,PICK[2]),
+  /* approach the stem from the side at mid-stem height (inward, toward the robot base)
+     so the gripper never descends through the bloom, then reach in to clamp the middle */
+  OVER_PICK:ik3(-0.204,GRAB_Y,0.099),
   AT_PICK:ik3(PICK[0],PICK[1],PICK[2]),
-  LIFT:ik3(PICK[0],PICK[1]+0.16,PICK[2]),
+  LIFT:ik3(PICK[0],PICK[1]+0.17,PICK[2]),
   CAMERA:ik3(-0.15,0.28,0.20),
   OVER_PLACE:ik3(PLACE[0],PLACE[1]+0.13,PLACE[2]),
   AT_PLACE:ik3(PLACE[0],PLACE[1],PLACE[2]),
@@ -432,14 +435,14 @@ function roseGeo(){
 }
 function flowerMesh(type,color){
   const grp=new THREE.Group();
-  const stem=cyl(0.0055,0.15,mat('#4a7c2f',0.85,0));stem.position.y=0.075;grp.add(stem);
+  const stem=cyl(0.0055,STEM_LEN,mat('#4a7c2f',0.85,0));stem.position.y=STEM_LEN/2;grp.add(stem);
   const rg=type==='focal'?roseGeo():false;
   if(rg){
     const head=new THREE.Mesh(rg,mat(color,0.55,0.0));head.scale.setScalar(0.11);
-    head.position.y=0.15;head.castShadow=true;grp.add(head);
+    head.position.y=STEM_LEN;head.castShadow=true;grp.add(head);
   }else{
     const r=type==='filler'?0.026:0.034;
-    const head=new THREE.Mesh(new THREE.SphereGeometry(r,18,14),mat(color,0.6,0));head.position.y=0.15;head.castShadow=true;grp.add(head);
+    const head=new THREE.Mesh(new THREE.SphereGeometry(r,18,14),mat(color,0.6,0));head.position.y=STEM_LEN;head.castShadow=true;grp.add(head);
   }
   return grp;
 }
@@ -552,7 +555,9 @@ function addBouquetFlower(idx){const id=stemsToBuild[idx];if(!id||!cell3dReady)r
   fm.position.set(sl.x,sl.y,sl.z);const lean=sl.r*3.2;fm.rotation.set(Math.sin(sl.a)*lean,0,-Math.cos(sl.a)*lean);
   fm.scale.setScalar(0.9);bouquetGroup.add(fm);}
 function attachCarried(id){if(!cell3dReady)return;carriedGroup=flowerMesh(PARTS[id].type,PARTS[id].color);
-  carriedGroup.rotation.x=Math.PI;carriedGroup.position.set(0,0.045,0);carriedGroup.scale.setScalar(0.85);toolGroup.add(carriedGroup);}
+  carriedGroup.rotation.x=Math.PI;carriedGroup.scale.setScalar(0.85);
+  /* grip the MIDDLE of the stem (bloom upright, lower stem hanging below the jaws) */
+  carriedGroup.position.set(0, 0.045 + 0.85*(STEM_LEN/2), 0);toolGroup.add(carriedGroup);}
 function detachCarried(){if(carriedGroup&&toolGroup){toolGroup.remove(carriedGroup);carriedGroup=null;}}
 function renderCell(){if(!cell3dReady)return;const o=carrying?0.009:0.022;if(fingerL)fingerL.position.x=-o;if(fingerR)fingerR.position.x=o;
   if(carouselGroup){carouselCurRot+=(carouselRot-carouselCurRot)*0.16;carouselGroup.rotation.y=carouselCurRot;}
