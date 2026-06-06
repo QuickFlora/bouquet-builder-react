@@ -59,7 +59,7 @@ export default function App(){
       <main>
         <div className="top">{crumb}<div className="grow"></div><div className="search"><i className="ti ti-search"></i> Search</div><div className="ava">AF</div></div>
         {screen}
-        <div style={{padding:'14px 26px',color:'var(--faint)',fontSize:12}}>Bouquet Builder — React app for QuickFlora · screens mirror the existing Florica POS pages &amp; tables</div>
+        <div style={{padding:'14px 26px',color:'var(--faint)',fontSize:12}}>Bouquet Builder — React app for Sunflower Technologies · screens mirror the existing Florica POS pages &amp; tables</div>
       </main>
       {toast && <div className="toast">{toast}</div>}
     </div>

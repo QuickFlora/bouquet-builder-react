@@ -1,6 +1,6 @@
 # Bouquet Builder (React + Vite)
 
-QuickFlora Bouquet Builder POC. Flat single-level Vite project.
+Sunflower Technologies Bouquet Builder POC. Flat single-level Vite project.
 
 ## Local
 npm install
