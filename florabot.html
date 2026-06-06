@@ -120,6 +120,7 @@
   .banner .btn{background:#fff;color:var(--green-d)}
   @media(max-width:1000px){.builder,.plan,.assembly,.dash{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}.preview{position:static}}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
 <header class="top">
@@ -198,7 +199,7 @@
     </div>
     <div class="assembly">
       <div class="card stage">
-        <svg id="cellSVG" viewBox="0 0 900 500" width="100%"></svg>
+        <div id="cell3d" style="width:100%;height:480px;border-radius:12px;overflow:hidden;background:#f3f7f5"></div>
         <div class="controls">
           <button class="btn primary" id="runBtn" onclick="toggleRun()">▶ Run</button>
           <button class="btn ghost" onclick="resetRun()">Reset</button>
@@ -377,104 +378,130 @@ function renderSeq(){
 function hlSlot(i,on){const r=document.querySelector(`.seqrow[data-i="${i}"]`);if(r)r.classList.toggle('hl',!!on);}
 
 /* ---------------- live assembly ---------------- */
-const cell=document.getElementById('cellSVG');
-const BASE={x:540,y:430}, L1=180, L2=165;
-const PICK={x:300,y:250}, PLACE={x:752,y:250};
-let stemsToBuild=[], placed=0, carrying=null, carouselRot=0, running=false, raf=null;
-let phaseI=0, t0=0, ee={x:540,y:200}, prevTarget={x:540,y:200};
-const PHASES=[ // name, target, dur(ms), grip(+1 pick / -1 place)
-  {n:'approach',tg:()=>({x:PICK.x+8,y:PICK.y-70}),d:520},
-  {n:'pick',    tg:()=>PICK,d:430,grip:1},
-  {n:'lift',    tg:()=>({x:PICK.x+8,y:PICK.y-80}),d:430},
-  {n:'check',   tg:()=>({x:430,y:150}),d:560},
-  {n:'approachP',tg:()=>({x:PLACE.x-8,y:PLACE.y-70}),d:560},
-  {n:'place',   tg:()=>PLACE,d:430,grip:-1},
-  {n:'liftP',   tg:()=>({x:PLACE.x-8,y:PLACE.y-90}),d:420},
+/* ---------------- 3D assembly cell (Three.js · UR3e-style) ---------------- */
+const cellHost=document.getElementById('cell3d');
+let scene,camera,renderer,joints=[],toolGroup,fingerL,fingerR,carouselGroup,bouquetGroup,carriedGroup=null,binFlowers=[],cell3dReady=false;
+let stemsToBuild=[],placed=0,carrying=null,carouselRot=0,running=false,raf=null,phaseI=0,t0=0;
+const HOME=[0,-1.15,1.5,-1.2,-1.57,0];
+const POSES={
+  HOME:HOME,
+  OVER_PICK:[0.95,-0.62,1.12,-2.05,-1.57,0],
+  AT_PICK:[0.95,-0.42,1.34,-2.48,-1.57,0],
+  LIFT:[0.95,-0.85,1.05,-1.78,-1.57,0],
+  CAMERA:[0.05,-0.7,0.85,-1.72,-1.4,0.4],
+  OVER_PLACE:[-0.95,-0.62,1.12,-2.05,-1.57,0],
+  AT_PLACE:[-0.95,-0.46,1.32,-2.42,-1.57,0],
+  RETRACT:[-0.95,-0.88,1.0,-1.74,-1.57,0],
+};
+const PHASES=[
+  {n:'approach',pose:'OVER_PICK',d:600},
+  {n:'pick',pose:'AT_PICK',d:480,grip:1},
+  {n:'lift',pose:'LIFT',d:460},
+  {n:'check',pose:'CAMERA',d:640},
+  {n:'approachP',pose:'OVER_PLACE',d:640},
+  {n:'place',pose:'AT_PLACE',d:480,grip:-1},
+  {n:'liftP',pose:'RETRACT',d:440},
 ];
-function ik(t){let dx=t.x-BASE.x,dy=t.y-BASE.y,d=Math.hypot(dx,dy);d=Math.min(d,L1+L2-1);
-  const a2=Math.acos(Math.max(-1,Math.min(1,(d*d-L1*L1-L2*L2)/(2*L1*L2))));
-  const a1=Math.atan2(dy,dx)-Math.atan2(L2*Math.sin(a2),L1+L2*Math.cos(a2));
-  const ex=BASE.x+L1*Math.cos(a1),ey=BASE.y+L1*Math.sin(a1);
-  return {ex,ey,hx:ex+L2*Math.cos(a1+a2),hy:ey+L2*Math.sin(a1+a2)};
-}
+let curPose=HOME.slice(),prevPose=HOME.slice();
 function buildList(){stemsToBuild=expandStems();placed=0;carrying=null;}
-function drawCell(){
-  const k=ik(ee);
-  // carousel bins
-  let bins='';const nb=Math.max(8,stemsToBuild.length);
-  for(let i=0;i<nb;i++){const a=carouselRot+i*(360/nb)*Math.PI/180;
-    const bx=180+Math.cos(a)*78, by=250+Math.sin(a)*78;
-    const id=stemsToBuild[i]; const empty = i<placed || !id;
-    bins+=`<circle cx="${bx}" cy="${by}" r="17" fill="${empty?'#eef2ef':'#fff'}" stroke="#cdd9d2"/>`;
-    if(id&&!empty)bins+=`<g transform="translate(${bx},${by}) scale(.75)">${flower(PARTS[id].type,PARTS[id].color,12)}</g>`;
-  }
-  const carried = carrying?`<g transform="translate(${k.hx},${k.hy+14})">${flower(PARTS[carrying].type,PARTS[carrying].color,13)}</g>`:'';
-  // bouquet build-up
-  let bq='';for(let i=0;i<placed;i++){const id=stemsToBuild[i];const ang=(i/Math.max(1,stemsToBuild.length-1)-.5)*1.8;
-    const x=752+Math.sin(ang)*30, y=250-Math.cos(ang)*14-(i%3)*6; const sz=PARTS[id].type==='focal'?14:PARTS[id].type==='filler'?9:11;
-    bq+=`<g transform="translate(${x},${y})">${flower(PARTS[id].type,PARTS[id].color,sz)}</g>`;}
-
-  cell.innerHTML=`
-    <rect x="0" y="0" width="900" height="500" fill="#fbfdfc"/>
-    <rect x="0" y="392" width="900" height="108" fill="#eef3f0"/>
-    <!-- carousel -->
-    <circle cx="180" cy="250" r="98" fill="#fff" stroke="#dde7e2" stroke-width="2"/>
-    <circle cx="180" cy="250" r="30" fill="#f1f6f3" stroke="#dde7e2"/>
-    <text x="180" y="370" text-anchor="middle" font-size="12" fill="#7a8a82" font-weight="700">STEM CAROUSEL</text>
-    ${bins}
-    <!-- pick station marker -->
-    <circle cx="${PICK.x}" cy="${PICK.y}" r="22" fill="none" stroke="#3F9E7C" stroke-width="2" stroke-dasharray="4 4"/>
-    <text x="${PICK.x}" y="${PICK.y-30}" text-anchor="middle" font-size="10" fill="#3F9E7C" font-weight="700">PICK</text>
-    <!-- camera -->
-    <rect x="${PICK.x-22}" y="120" width="44" height="22" rx="5" fill="#16302B"/>
-    <circle cx="${PICK.x}" cy="142" r="5" fill="#7fe3b0"/>
-    <line x1="${PICK.x}" y1="147" x2="${PICK.x-20}" y2="${PICK.y-22}" stroke="#7fe3b0" stroke-width="1" stroke-dasharray="3 3" opacity=".7"/>
-    <line x1="${PICK.x}" y1="147" x2="${PICK.x+20}" y2="${PICK.y-22}" stroke="#7fe3b0" stroke-width="1" stroke-dasharray="3 3" opacity=".7"/>
-    <text x="${PICK.x}" y="112" text-anchor="middle" font-size="9" fill="#3F9E7C" font-weight="700">3D VISION</text>
-    <!-- bouquet fixture -->
-    <ellipse cx="752" cy="300" rx="46" ry="12" fill="#e2ddd0"/>
-    <path d="M726 296 L740 360 L764 360 L778 296 Z" fill="#e9e2d6"/>
-    ${bq}
-    <text x="752" y="388" text-anchor="middle" font-size="12" fill="#7a8a82" font-weight="700">BOUQUET FIXTURE</text>
-    <!-- robot arm -->
-    <rect x="${BASE.x-26}" y="430" width="52" height="50" rx="6" fill="#cdd9d2"/>
-    <circle cx="${BASE.x}" cy="${BASE.y}" r="13" fill="#16302B"/>
-    <line x1="${BASE.x}" y1="${BASE.y}" x2="${k.ex}" y2="${k.ey}" stroke="#2f4a42" stroke-width="15" stroke-linecap="round"/>
-    <line x1="${k.ex}" y1="${k.ey}" x2="${k.hx}" y2="${k.hy}" stroke="#3F9E7C" stroke-width="12" stroke-linecap="round"/>
-    <circle cx="${k.ex}" cy="${k.ey}" r="8" fill="#16302B"/>
-    <g transform="translate(${k.hx},${k.hy})">
-      <rect x="-9" y="-6" width="18" height="12" rx="3" fill="#16302B"/>
-      <rect x="-9" y="6" width="4" height="${carrying?12:7}" fill="#16302B"/>
-      <rect x="5" y="6" width="4" height="${carrying?12:7}" fill="#16302B"/>
-    </g>
-    ${carried}`;
+function mat(c,rough,metal){return new THREE.MeshStandardMaterial({color:c,roughness:rough==null?0.5:rough,metalness:metal==null?0.3:metal});}
+function cyl(r,h,m){const g=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,32),m);g.castShadow=true;return g;}
+function flowerMesh(type,color){
+  const grp=new THREE.Group();
+  const stem=cyl(0.006,0.12,mat('#4a7c2f',0.85,0));stem.position.y=0.06;grp.add(stem);
+  const r=type==='focal'?0.045:type==='filler'?0.026:0.034;
+  const head=new THREE.Mesh(new THREE.SphereGeometry(r,18,14),mat(color,0.6,0));head.position.y=0.12;head.castShadow=true;grp.add(head);
+  return grp;
 }
+function buildArm(){
+  const alu=mat('#e2e7e9',0.35,0.6), dark=mat('#2b3a35',0.5,0.4), accent=mat('#1F6F54',0.45,0.3);
+  const root=new THREE.Group();
+  const base=cyl(0.062,0.05,dark);base.position.y=0.025;root.add(base);
+  const j1=new THREE.Group();j1.position.y=0.05;root.add(j1);joints[0]=j1;
+  const sh=cyl(0.05,0.085,alu);sh.rotation.z=Math.PI/2;sh.position.y=0.04;j1.add(sh);
+  const j2=new THREE.Group();j2.position.y=0.075;j1.add(j2);joints[1]=j2;
+  const upper=cyl(0.034,0.244,accent);upper.position.y=0.122;j2.add(upper);
+  const j3=new THREE.Group();j3.position.y=0.244;j2.add(j3);joints[2]=j3;
+  const eb=cyl(0.04,0.075,dark);eb.rotation.z=Math.PI/2;j3.add(eb);
+  const fore=cyl(0.03,0.213,alu);fore.position.y=0.107;j3.add(fore);
+  const j4=new THREE.Group();j4.position.y=0.213;j3.add(j4);joints[3]=j4;
+  const w1=cyl(0.032,0.058,dark);w1.rotation.z=Math.PI/2;j4.add(w1);
+  const j5=new THREE.Group();j5.position.y=0.055;j4.add(j5);joints[4]=j5;
+  const w2=cyl(0.03,0.055,alu);j5.add(w2);
+  const j6=new THREE.Group();j6.position.y=0.05;j5.add(j6);joints[5]=j6;
+  const flange=cyl(0.027,0.028,dark);flange.position.y=0.014;j6.add(flange);
+  toolGroup=new THREE.Group();toolGroup.position.y=0.028;j6.add(toolGroup);
+  const palm=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.022,0.04),dark);palm.position.y=0.011;palm.castShadow=true;toolGroup.add(palm);
+  fingerL=new THREE.Mesh(new THREE.BoxGeometry(0.012,0.05,0.03),dark);fingerL.position.set(-0.02,0.045,0);fingerL.castShadow=true;toolGroup.add(fingerL);
+  fingerR=new THREE.Mesh(new THREE.BoxGeometry(0.012,0.05,0.03),dark);fingerR.position.set(0.02,0.045,0);fingerR.castShadow=true;toolGroup.add(fingerR);
+  return root;
+}
+function initCell3d(){
+  if(cell3dReady||!window.THREE||!cellHost)return;
+  const W=cellHost.clientWidth||860,H=480;
+  scene=new THREE.Scene();scene.background=new THREE.Color('#f3f7f5');
+  camera=new THREE.PerspectiveCamera(42,W/H,0.1,50);camera.position.set(0.95,0.82,1.18);camera.lookAt(0,0.3,0.02);
+  renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));renderer.setSize(W,H);
+  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  cellHost.innerHTML='';cellHost.appendChild(renderer.domElement);
+  scene.add(new THREE.HemisphereLight(0xffffff,0x9fb2a8,0.75));
+  const dir=new THREE.DirectionalLight(0xffffff,0.95);dir.position.set(1.4,2.1,1.1);dir.castShadow=true;
+  dir.shadow.mapSize.set(1024,1024);Object.assign(dir.shadow.camera,{near:0.5,far:7,left:-1.6,right:1.6,top:1.6,bottom:-1.6});scene.add(dir);
+  const table=new THREE.Mesh(new THREE.CylinderGeometry(1.05,1.05,0.04,48),mat('#e9efeb',0.92,0));table.position.y=-0.02;table.receiveShadow=true;scene.add(table);
+  scene.add(buildArm());
+  carouselGroup=new THREE.Group();carouselGroup.position.set(-0.4,0.0,0.05);scene.add(carouselGroup);
+  const disc=new THREE.Mesh(new THREE.CylinderGeometry(0.19,0.19,0.03,40),mat('#ffffff',0.6,0));disc.position.y=0.015;disc.receiveShadow=true;disc.castShadow=true;carouselGroup.add(disc);
+  bouquetGroup=new THREE.Group();bouquetGroup.position.set(0.43,0,0.05);scene.add(bouquetGroup);
+  const vase=cyl(0.055,0.15,mat('#cfd8d2',0.4,0.1));vase.position.y=0.075;vase.castShadow=true;vase.receiveShadow=true;bouquetGroup.add(vase);
+  const cam=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.04,0.05),mat('#16302B',0.5,0.3));cam.position.set(-0.4,0.46,0.05);cam.castShadow=true;scene.add(cam);
+  cell3dReady=true;applyPose(curPose);buildBins();renderCell();
+  window.addEventListener('resize',onCellResize);
+}
+function onCellResize(){if(!renderer||!cellHost)return;const W=cellHost.clientWidth||860,H=480;camera.aspect=W/H;camera.updateProjectionMatrix();renderer.setSize(W,H);renderCell();}
+function applyPose(p){if(!joints[0])return;joints[0].rotation.y=p[0];joints[1].rotation.x=p[1];joints[2].rotation.x=p[2];joints[3].rotation.x=p[3];joints[4].rotation.y=p[4];joints[5].rotation.y=p[5];}
+function buildBins(){if(!cell3dReady)return;binFlowers.forEach(f=>carouselGroup.remove(f));binFlowers=[];
+  const n=Math.max(8,stemsToBuild.length);
+  for(let i=0;i<stemsToBuild.length;i++){const id=stemsToBuild[i];if(i<placed||!id)continue;
+    const a=carouselRot+i*(Math.PI*2/n),r=0.135;const fm=flowerMesh(PARTS[id].type,PARTS[id].color);
+    fm.position.set(Math.cos(a)*r,0.03,Math.sin(a)*r);fm.scale.setScalar(0.7);carouselGroup.add(fm);binFlowers.push(fm);}}
+function addBouquetFlower(idx){const id=stemsToBuild[idx];if(!id||!cell3dReady)return;
+  const ang=(idx/Math.max(1,stemsToBuild.length-1)-0.5)*1.3;const fm=flowerMesh(PARTS[id].type,PARTS[id].color);
+  fm.position.set(Math.sin(ang)*0.03,0.13,Math.cos(ang)*0.02);fm.rotation.z=ang*0.6;fm.scale.setScalar(0.92);bouquetGroup.add(fm);}
+function attachCarried(id){if(!cell3dReady)return;carriedGroup=flowerMesh(PARTS[id].type,PARTS[id].color);
+  carriedGroup.rotation.x=Math.PI;carriedGroup.position.set(0,0.05,0);carriedGroup.scale.setScalar(0.85);toolGroup.add(carriedGroup);}
+function detachCarried(){if(carriedGroup&&toolGroup){toolGroup.remove(carriedGroup);carriedGroup=null;}}
+function renderCell(){if(!cell3dReady)return;const o=carrying?0.011:0.022;if(fingerL)fingerL.position.x=-o;if(fingerR)fingerR.position.x=o;renderer.render(scene,camera);}
+function resetScene(){if(!cell3dReady)return;detachCarried();
+  for(let i=bouquetGroup.children.length-1;i>=1;i--)bouquetGroup.remove(bouquetGroup.children[i]);
+  curPose=HOME.slice();prevPose=HOME.slice();applyPose(curPose);buildBins();onCellResize();}
 function lerp(a,b,t){return a+(b-a)*t;}
 function easi(t){return t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;}
 function step(ts){
+  if(!cell3dReady)initCell3d();
   if(!t0)t0=ts;
-  const ph=PHASES[phaseI];const tgt=ph.tg();
+  const ph=PHASES[phaseI],tp=POSES[ph.pose];
   let p=Math.min(1,(ts-t0)/(ph.d/SPEED));const e=easi(p);
-  ee={x:lerp(prevTarget.x,tgt.x,e),y:lerp(prevTarget.y,tgt.y,e)};
-  drawCell();
+  for(let i=0;i<6;i++)curPose[i]=lerp(prevPose[i],tp[i],e);
+  applyPose(curPose);renderCell();
   if(p>=1){
-    if(ph.grip===1){carrying=stemsToBuild[placed];onVision('pick');}
+    if(ph.grip===1){carrying=stemsToBuild[placed];attachCarried(carrying);buildBins();onVision('pick');}
     if(ph.n==='check')onVision('check');
-    if(ph.grip===-1){placed++;carrying=null;carouselRot+=(Math.PI*2)/Math.max(8,stemsToBuild.length);onVision('place');updateProg();}
+    if(ph.grip===-1){detachCarried();addBouquetFlower(placed);placed++;carrying=null;carouselRot+=(Math.PI*2)/Math.max(8,stemsToBuild.length);buildBins();onVision('place');updateProg();}
     if(ph.n==='approach')onVision('approach');
-    prevTarget={...tgt};phaseI++;t0=ts;
+    prevPose=tp.slice();phaseI++;t0=ts;
     if(phaseI>=PHASES.length){phaseI=0;
       if(placed>=stemsToBuild.length){running=false;document.getElementById('runBtn').textContent='▶ Run';onVision('done');return;}
     }
   }
   if(running)raf=requestAnimationFrame(step);
 }
+
 let SPEED=1;
 function toggleRun(){if(placed>=stemsToBuild.length)resetRun();
   running=!running;document.getElementById('runBtn').textContent=running?'⏸ Pause':'▶ Run';
-  if(running){t0=0;raf=requestAnimationFrame(step);}else cancelAnimationFrame(raf);}
-function resetRun(){running=false;cancelAnimationFrame(raf);buildList();phaseI=0;t0=0;ee={x:540,y:200};prevTarget={x:540,y:200};carouselRot=0;
-  document.getElementById('runBtn').textContent='▶ Run';document.getElementById('vfeed').innerHTML='';updateProg();drawCell();}
+  if(running){if(!cell3dReady)initCell3d();t0=0;raf=requestAnimationFrame(step);}else cancelAnimationFrame(raf);}
+function resetRun(){running=false;cancelAnimationFrame(raf);buildList();phaseI=0;t0=0;carouselRot=0;
+  document.getElementById('runBtn').textContent='▶ Run';document.getElementById('vfeed').innerHTML='';updateProg();if(cell3dReady)resetScene();else initCell3d();}
 function updateProg(){const n=stemsToBuild.length;document.getElementById('prog').style.width=(n?placed/n*100:0)+'%';
   document.getElementById('progTxt').textContent=`${placed} / ${n}`;}
 function vline(html,cls){const f=document.getElementById('vfeed');const d=document.createElement('div');
@@ -504,7 +531,7 @@ function go(s){document.querySelectorAll('.screen').forEach(x=>x.classList.toggl
 document.getElementById('nav').addEventListener('click',e=>{if(e.target.dataset.s)go(e.target.dataset.s);});
 
 /* ---------------- init ---------------- */
-renderPalette();renderAll();buildList();drawCell();
+renderPalette();renderAll();buildList();
 </script>
 </body>
 </html>
