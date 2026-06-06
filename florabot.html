@@ -381,15 +381,18 @@ function hlSlot(i,on){const r=document.querySelector(`.seqrow[data-i="${i}"]`);i
 /* ---------------- live assembly ---------------- */
 /* ---------------- 3D assembly cell (Three.js · UR3e-style) ---------------- */
 const cellHost=document.getElementById('cell3d');
-let scene,camera,renderer,joints=[],toolGroup,fingerL,fingerR,carouselGroup,bouquetGroup,carriedGroup=null,binFlowers=[],cell3dReady=false,pickGroup=null,pickStem=null,pSlots=[];
-/* ---- pivot mechanism (left-side stem feeder) ---- */
-const PIVOT=[-0.58,0,0.18], ARMS=12, DISC_Y=0.028, DISC_R=0.12, DISC_T=0.022, ARM_LEN=0.13, ARM_R0=DISC_R-0.012;
-let armPivots=[], carouselCurRot=0;
-let stemsToBuild=[],placed=0,carrying=null,carouselRot=0,running=false,raf=null,phaseI=0,t0=0;
+let scene,camera,renderer,joints=[],toolGroup,fingerL,fingerR,bouquetGroup,carriedGroup=null,cell3dReady=false,pSlots=[];
+/* ---- three identical pivot carousels (stem feeders) ---- */
+const ARMS=12, DISC_Y=0.028, DISC_R=0.12, DISC_T=0.022, ARM_LEN=0.13, ARM_R0=DISC_R-0.012;
 const STEM_LEN=0.22, GRAB_Y=STEM_LEN*0.5;            /* stem length & mid-stem grab height */
 const ARM_S=1.30;   /* scale the whole arm up 30% for more reach/clearance */
-const PICK_ANG=1.8717;   /* arm angle (rad) that points one arm toward the robot = the pick station */
-const PICK=[-0.378,GRAB_Y,0.117], PLACE=[0.44,0.16,0.06];   /* PICK is an arm TIP facing the robot, NOT the hub centre */
+/* carousels sit on an arc to the robot's left, all at the same distance from the base, so the
+   grab pose is identical for each — only the base rotation (j1) changes. Round-robin picking. */
+const FEED_R=0.607, STN_R=0.395;                     /* carousel-centre & pick-station radius from base */
+const FEED_ANG=[-2.17,-1.27,-0.37];                  /* azimuths of carousels 0,1,2 */
+let feeders=[];                                      /* built in buildFeeders() */
+let stemsToBuild=[],placed=0,carrying=null,running=false,raf=null,phaseI=0,t0=0;
+const PLACE=[0.44,0.16,0.06];
 function ik3(tx,ty,tz){const hS=0.125*ARM_S,a=0.244*ARM_S,b=0.213*ARM_S,tool=0.178*ARM_S;
   const wy=ty+tool, j1=Math.atan2(tx,tz), R=Math.hypot(tx,tz), dY=wy-hS;
   let D=Math.min(Math.hypot(R,dY),a+b-0.004);
@@ -399,14 +402,15 @@ function ik3(tx,ty,tz){const hS=0.125*ARM_S,a=0.244*ARM_S,b=0.213*ARM_S,tool=0.1
   const phi2=Math.PI/2-psi1, phi3=-psi2, phi4=Math.PI-(phi2+phi3);
   return [j1,phi2,phi3,phi4,-1.5708,0];}
 const HOME=ik3(0,0.42,0.24);
+/* SIDE-PINCH grab solved offline for a station at radius 0.395, height GRAB_Y, tool horizontal.
+   Only j1 (base yaw) changes per carousel, so reuse the planar joints and swap j1 = carousel azimuth. */
+const OVER_PLANAR=[1.0004,2.771,-2.2006,-3.1416,0], AT_PLANAR=[0.8228,2.5693,-1.8212,-3.1416,0];
+const pickPose=(ang,pl)=>[ang,...pl];
+function setPickFeeder(f){POSES.OVER_PICK=pickPose(FEED_ANG[f],OVER_PLANAR);POSES.AT_PICK=pickPose(FEED_ANG[f],AT_PLANAR);}
 const POSES={
   HOME:HOME,
-  /* SIDE PINCH: gripper turns horizontal and reaches in from the side at mid-stem height,
-     so the hand never sits above / descends through the bloom. Joint angles solved offline
-     (jaw lands exactly at mid-stem, tool horizontal, fingers straddle the vertical stem).
-     OVER_PICK = hand horizontal, slightly retracted toward base; AT_PICK = reach in & clamp. */
-  OVER_PICK:[-1.2699,1.0004,2.771,-2.2006,-3.1416,0],
-  AT_PICK:[-1.2699,0.8228,2.5693,-1.8212,-3.1416,0],
+  OVER_PICK:pickPose(FEED_ANG[0],OVER_PLANAR),
+  AT_PICK:pickPose(FEED_ANG[0],AT_PLANAR),
   LIFT:ik3(-0.30,0.40,0.16),   /* pull stem up & inward (toward base) and rotate it upright */
   CAMERA:ik3(-0.20,0.40,0.24),
   OVER_PLACE:ik3(PLACE[0],PLACE[1]+0.13,PLACE[2]),
@@ -423,7 +427,8 @@ const PHASES=[
   {n:'liftP',pose:'RETRACT',d:440},
 ];
 let curPose=HOME.slice(),prevPose=HOME.slice();
-function buildList(){stemsToBuild=expandStems();placed=0;carrying=null;pSlots=pyramidSlots(stemsToBuild.length);}
+function buildList(){stemsToBuild=expandStems();placed=0;carrying=null;pSlots=pyramidSlots(stemsToBuild.length);
+  feeders.forEach(fd=>{fd.picks=0;fd.targetRot=0;fd.curRot=0;});setPickFeeder(0);}
 function mat(c,rough,metal){return new THREE.MeshStandardMaterial({color:c,roughness:rough==null?0.5:rough,metalness:metal==null?0.3:metal});}
 function cyl(r,h,m){const g=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,32),m);g.castShadow=true;return g;}
 let ROSE_GEO=null;
@@ -474,43 +479,40 @@ function buildArm(){
   root.scale.setScalar(ARM_S);   /* scale whole arm up 30% */
   return root;
 }
-/* ---- FloraBot 12-arm pivot feeder (T-slot pedestal + rotating disc + radial arms) ---- */
-function buildPivot(){
+/* ---- three FloraBot 12-arm pivot carousels (T-slot pedestal + rotating disc + radial arms) ---- */
+function buildFeeders(){
+  feeders=[];
   const alu=mat('#9fb0bb',0.4,0.7), steel=mat('#33414b',0.5,0.6), black=mat('#191f1d',0.55,0.25),
         accent=mat('#1F6F54',0.45,0.3), clampM=mat('#3a4a44',0.5,0.3);
-  // ---- static pedestal / tower ----
-  const tower=new THREE.Group();tower.position.set(PIVOT[0],0,PIVOT[2]);scene.add(tower);
-  const legH=DISC_Y-0.006, sp=0.07;
-  [[1,1],[1,-1],[-1,1],[-1,-1]].forEach(([sx,sz])=>{
-    const leg=new THREE.Mesh(new THREE.BoxGeometry(0.015,legH,0.015),alu);
-    leg.position.set(sx*sp,legH/2,sz*sp);leg.castShadow=true;tower.add(leg);
-    const foot=new THREE.Mesh(new THREE.BoxGeometry(0.034,0.012,0.034),steel);
-    foot.position.set(sx*sp,0.006,sz*sp);foot.castShadow=true;foot.receiveShadow=true;tower.add(foot);
-  });
-  // base rails (rectangular frame) + cross brace
-  [[0,1],[0,-1]].forEach(([_,sz])=>{const r=new THREE.Mesh(new THREE.BoxGeometry(sp*2+0.034,0.013,0.015),alu);r.position.set(0,0.0065,sz*sp);r.castShadow=true;tower.add(r);});
-  [[1,0],[-1,0]].forEach(([sx])=>{const r=new THREE.Mesh(new THREE.BoxGeometry(0.015,0.013,sp*2+0.034),alu);r.position.set(sx*sp,0.0065,0);r.castShadow=true;tower.add(r);});
-  // tapered motor shroud under the disc
-  const shroud=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.085,legH,28),steel);
-  shroud.position.y=legH/2;shroud.castShadow=true;tower.add(shroud);
-  // ---- rotating assembly (disc + emblem + arms) ----
-  carouselGroup=new THREE.Group();carouselGroup.position.set(PIVOT[0],DISC_Y,PIVOT[2]);scene.add(carouselGroup);
-  const disc=new THREE.Mesh(new THREE.CylinderGeometry(DISC_R,DISC_R,DISC_T,48),black);
-  disc.castShadow=true;disc.receiveShadow=true;carouselGroup.add(disc);
-  // green FloraBot emblem on top face
-  const ring=new THREE.Mesh(new THREE.RingGeometry(0.032,0.05,40),accent);
-  ring.rotation.x=-Math.PI/2;ring.position.y=DISC_T/2+0.001;carouselGroup.add(ring);
-  const hubCap=new THREE.Mesh(new THREE.CylinderGeometry(0.026,0.026,0.012,24),steel);
-  hubCap.position.y=DISC_T/2+0.006;carouselGroup.add(hubCap);
-  // 12 radial arms with clamp blocks
-  armPivots=[];
-  for(let k=0;k<ARMS;k++){
-    const ag=new THREE.Group();ag.rotation.y=PICK_ANG+k*(Math.PI*2/ARMS);carouselGroup.add(ag);
-    const arm=new THREE.Mesh(new THREE.BoxGeometry(0.012,0.012,ARM_LEN),black);
-    arm.position.set(0,DISC_T/2-0.002,ARM_R0+ARM_LEN/2);arm.castShadow=true;ag.add(arm);
-    const clamp=new THREE.Mesh(new THREE.BoxGeometry(0.022,0.016,0.022),clampM);
-    clamp.position.set(0,DISC_T/2+0.006,ARM_R0+ARM_LEN*0.8);clamp.castShadow=true;ag.add(clamp);
-    armPivots.push(ag);
+  const legH=DISC_Y-0.006, sp=0.07, step=Math.PI*2/ARMS;
+  for(let fi=0;fi<3;fi++){
+    const ang=FEED_ANG[fi], cx=FEED_R*Math.sin(ang), cz=FEED_R*Math.cos(ang);
+    const sx=STN_R*Math.sin(ang), sz=STN_R*Math.cos(ang), pickAng=ang+Math.PI;
+    // static pedestal / tower
+    const tower=new THREE.Group();tower.position.set(cx,0,cz);scene.add(tower);
+    [[1,1],[1,-1],[-1,1],[-1,-1]].forEach(([ax,az])=>{
+      const leg=new THREE.Mesh(new THREE.BoxGeometry(0.015,legH,0.015),alu);leg.position.set(ax*sp,legH/2,az*sp);leg.castShadow=true;tower.add(leg);
+      const foot=new THREE.Mesh(new THREE.BoxGeometry(0.034,0.012,0.034),steel);foot.position.set(ax*sp,0.006,az*sp);foot.castShadow=true;foot.receiveShadow=true;tower.add(foot);
+    });
+    [[0,1],[0,-1]].forEach(([_,az])=>{const r=new THREE.Mesh(new THREE.BoxGeometry(sp*2+0.034,0.013,0.015),alu);r.position.set(0,0.0065,az*sp);r.castShadow=true;tower.add(r);});
+    [[1,0],[-1,0]].forEach(([ax])=>{const r=new THREE.Mesh(new THREE.BoxGeometry(0.015,0.013,sp*2+0.034),alu);r.position.set(ax*sp,0.0065,0);r.castShadow=true;tower.add(r);});
+    const shroud=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.085,legH,28),steel);shroud.position.y=legH/2;shroud.castShadow=true;tower.add(shroud);
+    // rotating disc + emblem + arms
+    const disc=new THREE.Group();disc.position.set(cx,DISC_Y,cz);scene.add(disc);
+    const dm=new THREE.Mesh(new THREE.CylinderGeometry(DISC_R,DISC_R,DISC_T,48),black);dm.castShadow=true;dm.receiveShadow=true;disc.add(dm);
+    const ring=new THREE.Mesh(new THREE.RingGeometry(0.032,0.05,40),accent);ring.rotation.x=-Math.PI/2;ring.position.y=DISC_T/2+0.001;disc.add(ring);
+    const hubCap=new THREE.Mesh(new THREE.CylinderGeometry(0.026,0.026,0.012,24),steel);hubCap.position.y=DISC_T/2+0.006;disc.add(hubCap);
+    const arms=[];
+    for(let k=0;k<ARMS;k++){
+      const ag=new THREE.Group();ag.rotation.y=pickAng+k*step;disc.add(ag);
+      const arm=new THREE.Mesh(new THREE.BoxGeometry(0.012,0.012,ARM_LEN),black);arm.position.set(0,DISC_T/2-0.002,ARM_R0+ARM_LEN/2);arm.castShadow=true;ag.add(arm);
+      const clamp=new THREE.Mesh(new THREE.BoxGeometry(0.022,0.016,0.022),clampM);clamp.position.set(0,DISC_T/2+0.006,ARM_R0+ARM_LEN*0.8);clamp.castShadow=true;ag.add(clamp);
+      arms.push(ag);
+    }
+    // pick-station group (holds the presented stem) + overhead vision camera
+    const pg=new THREE.Group();pg.position.set(sx,DISC_Y+DISC_T/2+0.012,sz);scene.add(pg);
+    const camB=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.04,0.05),mat('#16302B',0.5,0.3));camB.position.set(cx,0.55,cz);camB.castShadow=true;scene.add(camB);
+    feeders.push({ang,cx,cz,station:[sx,GRAB_Y,sz],disc,arms,pickGroup:pg,pickStem:null,targetRot:0,curRot:0,picks:0});
   }
 }
 /* ---- revolved glass vase (LatheGeometry profile: foot -> bulged body -> neck -> flared rim) ---- */
@@ -530,7 +532,7 @@ function initCell3d(){
   if(cell3dReady||!window.THREE||!cellHost)return;
   const W=cellHost.clientWidth||860,H=480;
   scene=new THREE.Scene();scene.background=new THREE.Color('#f3f7f5');
-  camera=new THREE.PerspectiveCamera(42,W/H,0.1,50);camera.position.set(1.48,1.18,1.78);camera.lookAt(-0.06,0.34,0.02);
+  camera=new THREE.PerspectiveCamera(44,W/H,0.1,50);camera.position.set(1.72,1.42,2.05);camera.lookAt(-0.12,0.30,0.04);
   renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));renderer.setSize(W,H);
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   cellHost.innerHTML='';cellHost.appendChild(renderer.domElement);
@@ -539,28 +541,41 @@ function initCell3d(){
   dir.shadow.mapSize.set(1024,1024);Object.assign(dir.shadow.camera,{near:0.5,far:7,left:-1.6,right:1.6,top:1.6,bottom:-1.6});scene.add(dir);
   const table=new THREE.Mesh(new THREE.CylinderGeometry(1.05,1.05,0.04,48),mat('#e9efeb',0.92,0));table.position.y=-0.02;table.receiveShadow=true;scene.add(table);
   scene.add(buildArm());
-  buildPivot();
+  buildFeeders();
   bouquetGroup=new THREE.Group();bouquetGroup.position.set(0.44,0,0.06);scene.add(bouquetGroup);
   scene.add(makeVase(0.44,0,0.06));
-  pickGroup=new THREE.Group();pickGroup.position.set(PICK[0],DISC_Y+DISC_T/2+0.012,PICK[2]);scene.add(pickGroup);
-  /* (hub transfer clamp removed — stems are now presented & picked at the arm tips) */
-  const cam=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.04,0.05),mat('#16302B',0.5,0.3));cam.position.set(-0.58,0.55,0.18);cam.castShadow=true;scene.add(cam);
   cell3dReady=true;applyPose(curPose);buildBins();updatePickStem();renderCell();
   window.addEventListener('resize',onCellResize);
 }
 function onCellResize(){if(!renderer||!cellHost)return;const W=cellHost.clientWidth||860,H=480;camera.aspect=W/H;camera.updateProjectionMatrix();renderer.setSize(W,H);renderCell();}
 function applyPose(p){if(!joints[0])return;joints[0].rotation.y=p[0];joints[1].rotation.x=p[1];joints[2].rotation.x=p[2];joints[3].rotation.x=p[3];joints[4].rotation.y=p[4];joints[5].rotation.y=p[5];}
-function buildBins(){if(!cell3dReady||!armPivots.length)return;
-  binFlowers.forEach(f=>{if(f.parent)f.parent.remove(f);});binFlowers=[];
-  /* place each remaining stem standing on an arm tip; arm -(i) trails the station arm -(placed),
-     so as the disc indexes one slot the next loaded arm arrives at the pick station */
-  for(let i=placed+1;i<stemsToBuild.length;i++){const id=stemsToBuild[i];if(!id)continue;
-    const ag=armPivots[((-i)%ARMS+ARMS)%ARMS];
-    const fm=flowerMesh(PARTS[id].type,PARTS[id].color);fm.scale.setScalar(0.55);
-    fm.position.set(0,DISC_T/2+0.012,ARM_R0+ARM_LEN*0.8);
-    ag.add(fm);binFlowers.push(fm);}}
-function updatePickStem(){if(!cell3dReady)return;if(pickStem){pickGroup.remove(pickStem);pickStem=null;}
-  const id=stemsToBuild[placed];if(id&&!carrying){pickStem=flowerMesh(PARTS[id].type,PARTS[id].color);pickStem.scale.setScalar(0.55);pickGroup.add(pickStem);}}
+function buildBins(){if(!cell3dReady||!feeders.length)return;
+  /* for each carousel, stand its remaining stems on arm tips. Stem m=0 sits at the station arm
+     (shown as pickStem); reserves m>=1 trail behind so each disc index brings the next to the station. */
+  feeders.forEach((fd,fi)=>{
+    fd.arms.forEach(ag=>{for(let j=ag.children.length-1;j>=0;j--){if(ag.children[j].userData.stem)ag.remove(ag.children[j]);}});
+    let m=0;
+    for(let i=placed;i<stemsToBuild.length;i++){
+      if(i%3!==fi)continue;
+      const id=stemsToBuild[i];
+      if(id&&m>=1){
+        const k=((-(fd.picks+m))%ARMS+ARMS)%ARMS;
+        const fm=flowerMesh(PARTS[id].type,PARTS[id].color);fm.userData.stem=true;fm.scale.setScalar(0.55);
+        fm.position.set(0,DISC_T/2+0.012,ARM_R0+ARM_LEN*0.8);fd.arms[k].add(fm);
+      }
+      m++;
+    }
+  });}
+function updatePickStem(){if(!cell3dReady)return;const af=placed%3;
+  feeders.forEach((fd,fi)=>{
+    if(fd.pickStem){fd.pickGroup.remove(fd.pickStem);fd.pickStem=null;}
+    let nextI=-1;for(let i=placed;i<stemsToBuild.length;i++){if(i%3===fi){nextI=i;break;}}
+    const beingCarried=carrying&&fi===af&&nextI===placed;
+    if(nextI>=0&&stemsToBuild[nextI]&&!beingCarried){
+      fd.pickStem=flowerMesh(PARTS[stemsToBuild[nextI]].type,PARTS[stemsToBuild[nextI]].color);
+      fd.pickStem.scale.setScalar(0.55);fd.pickGroup.add(fd.pickStem);
+    }
+  });}
 function pyramidSlots(n){const s=[];if(n<=0)return s;
   // tiered cone: wide even ring at the rim, narrowing to a single apex
   let rem=n,tier=0;const tiers=[];
@@ -579,11 +594,11 @@ function attachCarried(id){if(!cell3dReady)return;carriedGroup=flowerMesh(PARTS[
   carriedGroup.position.set(0, 0.045 + (0.55/ARM_S)*(STEM_LEN/2), 0);toolGroup.add(carriedGroup);}
 function detachCarried(){if(carriedGroup&&toolGroup){toolGroup.remove(carriedGroup);carriedGroup=null;}}
 function renderCell(){if(!cell3dReady)return;const o=carrying?0.009:0.022;if(fingerL)fingerL.position.x=-o;if(fingerR)fingerR.position.x=o;
-  if(carouselGroup){carouselCurRot+=(carouselRot-carouselCurRot)*0.16;carouselGroup.rotation.y=carouselCurRot;}
+  feeders.forEach(fd=>{fd.curRot+=(fd.targetRot-fd.curRot)*0.16;fd.disc.rotation.y=fd.curRot;});
   renderer.render(scene,camera);}
 function resetScene(){if(!cell3dReady)return;detachCarried();
-  for(let i=bouquetGroup.children.length-1;i>=1;i--)bouquetGroup.remove(bouquetGroup.children[i]);
-  carouselCurRot=0;if(carouselGroup)carouselGroup.rotation.y=0;
+  for(let i=bouquetGroup.children.length-1;i>=0;i--)bouquetGroup.remove(bouquetGroup.children[i]);
+  feeders.forEach(fd=>{fd.curRot=0;fd.targetRot=0;fd.picks=0;fd.disc.rotation.y=0;});
   curPose=HOME.slice();prevPose=HOME.slice();applyPose(curPose);buildBins();updatePickStem();onCellResize();}
 function lerp(a,b,t){return a+(b-a)*t;}
 function easi(t){return t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;}
@@ -595,9 +610,12 @@ function step(ts){
   for(let i=0;i<6;i++)curPose[i]=lerp(prevPose[i],tp[i],e);
   applyPose(curPose);renderCell();
   if(p>=1){
-    if(ph.grip===1){carrying=stemsToBuild[placed];attachCarried(carrying);updatePickStem();buildBins();onVision('pick');}
+    const af=placed%3;   /* round-robin: this cycle picks from carousel af */
+    if(ph.grip===1){carrying=stemsToBuild[placed];attachCarried(carrying);updatePickStem();onVision('pick');}
     if(ph.n==='check')onVision('check');
-    if(ph.grip===-1){detachCarried();addBouquetFlower(placed);placed++;carrying=null;carouselRot+=(Math.PI*2)/ARMS;buildBins();updatePickStem();onVision('place');updateProg();}
+    if(ph.grip===-1){detachCarried();addBouquetFlower(placed);
+      feeders[af].picks++;feeders[af].targetRot+=(Math.PI*2)/ARMS;   /* index only the carousel just picked from */
+      placed++;carrying=null;setPickFeeder(placed%3);buildBins();updatePickStem();onVision('place');updateProg();}
     if(ph.n==='approach')onVision('approach');
     prevPose=tp.slice();phaseI++;t0=ts;
     if(phaseI>=PHASES.length){phaseI=0;
@@ -611,7 +629,7 @@ let SPEED=1;
 function toggleRun(){if(placed>=stemsToBuild.length)resetRun();
   running=!running;document.getElementById('runBtn').textContent=running?'⏸ Pause':'▶ Run';
   if(running){if(!cell3dReady)initCell3d();t0=0;raf=requestAnimationFrame(step);}else cancelAnimationFrame(raf);}
-function resetRun(){running=false;cancelAnimationFrame(raf);buildList();phaseI=0;t0=0;carouselRot=0;carouselCurRot=0;
+function resetRun(){running=false;cancelAnimationFrame(raf);buildList();phaseI=0;t0=0;
   document.getElementById('runBtn').textContent='▶ Run';document.getElementById('vfeed').innerHTML='';updateProg();if(cell3dReady)resetScene();else initCell3d();}
 function updateProg(){const n=stemsToBuild.length;document.getElementById('prog').style.width=(n?placed/n*100:0)+'%';
   document.getElementById('progTxt').textContent=`${placed} / ${n}`;}
