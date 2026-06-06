@@ -399,11 +399,13 @@ function ik3(tx,ty,tz){const hS=0.125,a=0.244,b=0.213,tool=0.178;
 const HOME=ik3(0,0.30,0.18);
 const POSES={
   HOME:HOME,
-  /* approach the stem from the side at mid-stem height (inward, toward the robot base)
-     so the gripper never descends through the bloom, then reach in to clamp the middle */
-  OVER_PICK:ik3(-0.204,GRAB_Y,0.099),
-  AT_PICK:ik3(PICK[0],PICK[1],PICK[2]),
-  LIFT:ik3(PICK[0],PICK[1]+0.17,PICK[2]),
+  /* SIDE PINCH: gripper turns horizontal and reaches in from the side at mid-stem height,
+     so the hand never sits above / descends through the bloom. Joint angles solved offline
+     (jaw lands exactly at mid-stem, tool horizontal, fingers straddle the vertical stem).
+     OVER_PICK = hand horizontal, slightly retracted toward base; AT_PICK = reach in & clamp. */
+  OVER_PICK:[-1.1193,0.6244,2.5355,-1.5891,-3.1416,0],
+  AT_PICK:[-1.1193,0.6513,2.2974,-1.3779,-3.1416,0],
+  LIFT:ik3(PICK[0],PICK[1]+0.16,PICK[2]),   /* rotate upright while lifting the stem out */
   CAMERA:ik3(-0.15,0.28,0.20),
   OVER_PLACE:ik3(PLACE[0],PLACE[1]+0.13,PLACE[2]),
   AT_PLACE:ik3(PLACE[0],PLACE[1],PLACE[2]),
