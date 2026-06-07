@@ -8,9 +8,10 @@ import RecipeView from './RecipeView.jsx'
 import RecipeEditor from './RecipeEditor.jsx'
 import Inventory from './Inventory.jsx'
 import FloraBot from './FloraBot.jsx'
+import POCRequest from './POCRequest.jsx'
 import { Orders, Buy, Receiving, Production, Pack, Deliveries, Settings } from './Ops.jsx'
 
-const TITLES={dashboard:'Dashboard',florabot:'FloraBot',orders:'Orders',buy:'Buy lists',receiving:'Receiving',production:'Production',pack:'Pack & ship',deliveries:'Deliveries',catalog:'Catalog & recipes',inventory:'Inventory status',settings:'Settings',recipe:'Recipe',editor:'Recipe editor'}
+const TITLES={dashboard:'Dashboard',florabot:'FloraBot',poc:'POC Request',orders:'Orders',buy:'Buy lists',receiving:'Receiving',production:'Production',pack:'Pack & ship',deliveries:'Deliveries',catalog:'Catalog & recipes',inventory:'Inventory status',settings:'Settings',recipe:'Recipe',editor:'Recipe editor'}
 
 export default function App(){
   const [store,setStore]=useState(loadStore())
@@ -44,6 +45,7 @@ export default function App(){
   else if(view.name==='recipe') screen=<RecipeView product={products.find(p=>p.sku===view.sku)} onEdit={()=>go('editor',{sku:view.sku})} onDelete={deleteRecipe} back={()=>go('catalog')}/>
   else if(view.name==='editor') screen=<RecipeEditor product={view.sku?products.find(p=>p.sku===view.sku):null} base={BASE} store={store} onSave={saveRecipe} onDelete={deleteRecipe} back={()=>go('catalog')}/>
   else if(view.name==='florabot') screen=<FloraBot/>
+  else if(view.name==='poc') screen=<POCRequest/>
   else if(view.name==='inventory') screen=<Inventory/>
   else if(view.name==='orders') screen=<Orders/>
   else if(view.name==='buy') screen=<Buy/>

@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FloraBot — Proof of Concept Intake</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F4F1E9;
+    --paper-2:#EBE5D6;
+    --ink:#16201A;
+    --green:#1B3A2A;
+    --green-2:#2E6B4A;
+    --accent:#E2683A;
+    --line:rgba(22,32,26,.14);
+    --line-strong:rgba(22,32,26,.28);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Hanken Grotesk',sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .font-display{font-family:'Fraunces',serif;}
+  .font-mono{font-family:'JetBrains Mono',monospace;}
+  /* blueprint grid texture */
+  .grid-bg{
+    background-image:
+      linear-gradient(var(--line) 1px,transparent 1px),
+      linear-gradient(90deg,var(--line) 1px,transparent 1px);
+    background-size:44px 44px;
+  }
+  .label{
+    font-family:'JetBrains Mono',monospace;
+    font-size:11px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--green);
+  }
+  .field{
+    width:100%;
+    background:#fff;
+    border:1px solid var(--line-strong);
+    border-radius:2px;
+    padding:13px 14px;
+    font-size:15px;
+    font-family:'Hanken Grotesk',sans-serif;
+    color:var(--ink);
+    transition:border-color .15s, box-shadow .15s;
+  }
+  .field::placeholder{color:rgba(22,32,26,.4)}
+  .field:focus{
+    outline:none;
+    border-color:var(--green-2);
+    box-shadow:0 0 0 3px rgba(46,107,74,.16);
+  }
+  select.field{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%231B3A2A' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;padding-right:38px;}
+  .seg{
+    cursor:pointer;
+    border:1px solid var(--line-strong);
+    border-radius:2px;
+    background:#fff;
+    padding:16px 14px;
+    transition:all .15s;
+    position:relative;
+  }
+  .seg:hover{border-color:var(--green-2)}
+  .seg input{position:absolute;opacity:0;pointer-events:none}
+  .seg.active{
+    border-color:var(--green);
+    background:var(--green);
+    color:var(--paper);
+  }
+  .seg.active .seg-sub{color:rgba(244,241,233,.7)}
+  .btn-accent{
+    background:var(--accent);
+    color:#fff;
+    border:none;
+    font-family:'JetBrains Mono',monospace;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    font-size:13px;
+    padding:16px 28px;
+    border-radius:2px;
+    cursor:pointer;
+    transition:transform .12s, filter .15s;
+  }
+  .btn-accent:hover{filter:brightness(1.06);transform:translateY(-1px)}
+  .btn-accent:active{transform:translateY(0)}
+  .btn-ghost{
+    background:transparent;border:1px solid var(--line-strong);color:var(--ink);
+    font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.06em;
+    padding:9px 14px;border-radius:2px;cursor:pointer;transition:all .15s;
+  }
+  .btn-ghost:hover{border-color:var(--green);color:var(--green)}
+  .row-grid{display:grid;grid-template-columns:1fr 110px 40px;gap:10px;align-items:center}
+  .corner{position:relative}
+  .corner::before,.corner::after{content:"";position:absolute;width:9px;height:9px;border-color:var(--green);border-style:solid}
+  .corner::before{top:-1px;left:-1px;border-width:1px 0 0 1px}
+  .corner::after{bottom:-1px;right:-1px;border-width:0 1px 1px 0}
+  .reveal{opacity:0;transform:translateY(14px);animation:rise .7s cubic-bezier(.2,.7,.2,1) forwards}
+  @keyframes rise{to{opacity:1;transform:none}}
+  .drop{
+    border:1.5px dashed var(--line-strong);border-radius:3px;background:rgba(255,255,255,.5);
+    transition:all .15s;cursor:pointer;
+  }
+  .drop:hover,.drop.over{border-color:var(--green-2);background:#fff}
+</style>
+</head>
+<body>
+
+<!-- ===== NAV ===== -->
+<header class="border-b" style="border-color:var(--line-strong)">
+  <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="1.6">
+        <path d="M12 3v4M12 21v-4M5 8l3 2M19 8l-3 2"/>
+        <circle cx="12" cy="13" r="3.2"/><circle cx="12" cy="13" r="1" fill="var(--accent)" stroke="none"/>
+      </svg>
+      <span class="font-display text-xl font-semibold tracking-tight">FloraBot</span>
+    </div>
+    <span class="label hidden sm:block">Proof&nbsp;of&nbsp;Concept&nbsp;/&nbsp;Intake</span>
+  </div>
+</header>
+
+<!-- ===== HERO ===== -->
+<section class="grid-bg border-b" style="border-color:var(--line-strong)">
+  <div class="max-w-6xl mx-auto px-6 py-14 md:py-20">
+    <p class="label mb-5 reveal">Form&nbsp;01&nbsp;—&nbsp;Operation&nbsp;Profile</p>
+    <h1 class="font-display text-4xl md:text-6xl font-semibold leading-[1.02] max-w-3xl reveal" style="animation-delay:.05s">
+      Start your FloraBot<br>proof&nbsp;of&nbsp;concept.
+    </h1>
+    <p class="mt-6 text-lg max-w-xl text-[rgba(22,32,26,.72)] reveal" style="animation-delay:.12s">
+      Tell us about your operation and define one arrangement you'd like us to automate.
+      We'll build a working POC and return a tailored Automation ROI for your CFO.
+    </p>
+    <div class="mt-8 flex flex-wrap gap-x-8 gap-y-3 label reveal" style="animation-delay:.18s">
+      <span>↳ 100–200 arrangements / hour</span>
+      <span>↳ 24/7 continuous run</span>
+      <span>↳ AIFD-grade consistency</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===== FORM ===== -->
+<main class="max-w-6xl mx-auto px-6 py-12 md:py-16">
+<form id="pocForm" class="grid md:grid-cols-12 gap-x-12 gap-y-10">
+
+  <!-- SECTION 1: OPERATION PROFILE -->
+  <div class="md:col-span-12">
+    <div class="flex items-baseline gap-4 mb-8">
+      <span class="font-mono text-sm" style="color:var(--accent)">01</span>
+      <h2 class="font-display text-2xl font-semibold">Operation Profile</h2>
+      <div class="flex-1 border-b" style="border-color:var(--line)"></div>
+    </div>
+
+    <div class="grid sm:grid-cols-2 gap-5">
+      <div>
+        <label class="label block mb-2">Company name *</label>
+        <input required name="company" class="field" placeholder="e.g. Andes Fresh Flowers" />
+      </div>
+      <div>
+        <label class="label block mb-2">Website / domain</label>
+        <input name="website" class="field" placeholder="company.com" />
+      </div>
+      <div>
+        <label class="label block mb-2">Contact name *</label>
+        <input required name="contact" class="field" placeholder="Full name" />
+      </div>
+      <div>
+        <label class="label block mb-2">Role / title</label>
+        <input name="role" class="field" placeholder="e.g. Operations Director" />
+      </div>
+      <div>
+        <label class="label block mb-2">Work email *</label>
+        <input required type="email" name="email" class="field" placeholder="name@company.com" />
+      </div>
+      <div>
+        <label class="label block mb-2">Phone</label>
+        <input name="phone" class="field" placeholder="+57 ..." />
+      </div>
+    </div>
+
+    <!-- business type -->
+    <div class="mt-8">
+      <label class="label block mb-3">Business type *</label>
+      <div class="grid sm:grid-cols-3 gap-3" id="bizType">
+        <label class="seg" data-val="grower">
+          <input type="radio" name="bizType" value="grower" required>
+          <div class="font-mono text-sm font-medium">GROWER</div>
+          <div class="seg-sub text-sm mt-1 text-[rgba(22,32,26,.6)]">Farm / production at source</div>
+        </label>
+        <label class="seg" data-val="wholesaler">
+          <input type="radio" name="bizType" value="wholesaler">
+          <div class="font-mono text-sm font-medium">WHOLESALER</div>
+          <div class="seg-sub text-sm mt-1 text-[rgba(22,32,26,.6)]">Bouquet / bunch assembly</div>
+        </label>
+        <label class="seg" data-val="retailer">
+          <input type="radio" name="bizType" value="retailer">
+          <div class="font-mono text-sm font-medium">RETAILER</div>
+          <div class="seg-sub text-sm mt-1 text-[rgba(22,32,26,.6)]">Stores / direct-to-consumer</div>
+        </label>
+      </div>
+    </div>
+
+    <div class="grid sm:grid-cols-3 gap-5 mt-8">
+      <div>
+        <label class="label block mb-2"># of locations *</label>
+        <input required type="number" min="1" name="locations" class="field" placeholder="1" />
+      </div>
+      <div>
+        <label class="label block mb-2">Country / region</label>
+        <input name="country" class="field" placeholder="e.g. Colombia" />
+      </div>
+      <div>
+        <label class="label block mb-2">Est. weekly volume (stems/bouquets)</label>
+        <input name="volume" class="field" placeholder="e.g. 50,000" />
+      </div>
+    </div>
+  </div>
+
+  <!-- SECTION 2: POC RECIPE -->
+  <div class="md:col-span-12 corner pt-10 pl-1" style="margin-top:8px">
+    <div class="flex items-baseline gap-4 mb-2">
+      <span class="font-mono text-sm" style="color:var(--accent)">02</span>
+      <h2 class="font-display text-2xl font-semibold">Proof-of-Concept Recipe</h2>
+      <div class="flex-1 border-b" style="border-color:var(--line)"></div>
+    </div>
+    <p class="text-[rgba(22,32,26,.65)] mb-8 max-w-xl">Define one item for us to automate. List each variety and its stem count — this becomes the build spec for the robotic cell.</p>
+
+    <div class="grid sm:grid-cols-2 gap-5">
+      <div>
+        <label class="label block mb-2">Item / arrangement name *</label>
+        <input required name="itemName" class="field" placeholder="e.g. Classic Dozen Rose Vase" />
+      </div>
+      <div>
+        <label class="label block mb-2">SKU *</label>
+        <input required name="sku" class="field font-mono" placeholder="e.g. FB-ROSE-12-VS" />
+      </div>
+    </div>
+
+    <!-- recipe line items -->
+    <div class="mt-8">
+      <div class="row-grid mb-2">
+        <span class="label">Variety</span>
+        <span class="label">Quantity</span>
+        <span></span>
+      </div>
+      <div id="recipeRows" class="space-y-3"></div>
+
+      <div class="flex items-center justify-between mt-5">
+        <button type="button" id="addRow" class="btn-ghost">+ Add variety</button>
+        <div class="font-mono text-sm">
+          <span class="text-[rgba(22,32,26,.55)]">TOTAL STEMS</span>
+          <span id="totalStems" class="ml-2 font-semibold text-lg" style="color:var(--green)">0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- image upload -->
+    <div class="mt-9">
+      <label class="label block mb-3">Final product image</label>
+      <label id="dropZone" class="drop flex items-center gap-4 p-5">
+        <input type="file" id="imgInput" accept="image/*" class="hidden" />
+        <div id="imgThumb" class="hidden w-20 h-20 rounded-sm bg-cover bg-center border" style="border-color:var(--line-strong)"></div>
+        <div id="imgIcon" class="w-20 h-20 rounded-sm flex items-center justify-center" style="background:var(--paper-2)">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+        </div>
+        <div>
+          <div class="font-medium" id="imgLabel">Upload a photo of the finished arrangement</div>
+          <div class="text-sm text-[rgba(22,32,26,.55)]">PNG or JPG — drag &amp; drop or click to browse</div>
+        </div>
+      </label>
+    </div>
+
+    <div class="mt-7">
+      <label class="label block mb-2">Notes for our engineering team</label>
+      <textarea name="notes" rows="3" class="field" placeholder="Vase type, wrap, packaging, tolerances, target cycle time..."></textarea>
+    </div>
+  </div>
+
+  <!-- SUBMIT -->
+  <div class="md:col-span-12 flex flex-col sm:flex-row items-start sm:items-center gap-5 pt-4">
+    <button type="submit" class="btn-accent">Submit POC Request →</button>
+    <p class="text-sm text-[rgba(22,32,26,.55)] max-w-md">We'll confirm within one business day and schedule a short scoping call before the build.</p>
+  </div>
+</form>
+
+<!-- CONFIRMATION (hidden until submit) -->
+<div id="confirm" class="hidden corner mt-4 p-8 md:p-12 bg-white">
+  <p class="label" style="color:var(--accent)">Status&nbsp;—&nbsp;Received</p>
+  <h2 class="font-display text-3xl font-semibold mt-3 mb-2">Your POC spec is in.</h2>
+  <p class="text-[rgba(22,32,26,.7)] mb-8 max-w-lg">Here's the build sheet we'll work from. A FloraBot engineer will reach out to confirm details and schedule your scoping call.</p>
+  <div id="specSheet" class="grid md:grid-cols-2 gap-8"></div>
+  <button type="button" id="resetBtn" class="btn-ghost mt-9">← Submit another item</button>
+</div>
+</main>
+
+<footer class="border-t" style="border-color:var(--line-strong)">
+  <div class="max-w-6xl mx-auto px-6 py-8 flex flex-col sm:flex-row justify-between gap-3 label">
+    <span>FloraBot&nbsp;·&nbsp;Physical&nbsp;AI&nbsp;for&nbsp;Floral&nbsp;Assembly</span>
+    <span>Powered&nbsp;by&nbsp;Universal&nbsp;Robots&nbsp;+&nbsp;FloraBot&nbsp;Vision</span>
+  </div>
+</footer>
+
+<script>
+/* ---------- business type selection ---------- */
+const segs = document.querySelectorAll('#bizType .seg');
+segs.forEach(s=>s.addEventListener('click',()=>{
+  segs.forEach(x=>x.classList.remove('active'));
+  s.classList.add('active');
+}));
+
+/* ---------- recipe rows ---------- */
+const rowsEl = document.getElementById('recipeRows');
+const totalEl = document.getElementById('totalStems');
+
+function recalcTotal(){
+  let t=0;
+  rowsEl.querySelectorAll('input[data-qty]').forEach(i=>t+=parseInt(i.value||0,10));
+  totalEl.textContent = t.toLocaleString();
+}
+function addRow(variety='',qty=''){
+  const div=document.createElement('div');
+  div.className='row-grid';
+  div.innerHTML=`
+    <input class="field" data-variety placeholder="e.g. Freedom Red Rose" value="${variety}">
+    <input class="field" type="number" min="0" data-qty placeholder="0" value="${qty}">
+    <button type="button" class="btn-ghost" data-del style="padding:9px 11px">✕</button>`;
+  rowsEl.appendChild(div);
+  div.querySelector('[data-qty]').addEventListener('input',recalcTotal);
+  div.querySelector('[data-del]').addEventListener('click',()=>{div.remove();recalcTotal();});
+  recalcTotal();
+}
+document.getElementById('addRow').addEventListener('click',()=>addRow());
+addRow('Freedom Red Rose','12'); // start with one prefilled row
+
+/* ---------- image upload + preview ---------- */
+const imgInput=document.getElementById('imgInput');
+const dropZone=document.getElementById('dropZone');
+const thumb=document.getElementById('imgThumb');
+const icon=document.getElementById('imgIcon');
+const imgLabel=document.getElementById('imgLabel');
+let imageDataUrl=null, imageName=null;
+
+function handleFile(file){
+  if(!file||!file.type.startsWith('image/'))return;
+  imageName=file.name;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    imageDataUrl=e.target.result;
+    thumb.style.backgroundImage=`url(${imageDataUrl})`;
+    thumb.classList.remove('hidden'); icon.classList.add('hidden');
+    imgLabel.textContent=file.name;
+  };
+  reader.readAsDataURL(file);
+}
+imgInput.addEventListener('change',e=>handleFile(e.target.files[0]));
+['dragover','dragenter'].forEach(ev=>dropZone.addEventListener(ev,e=>{e.preventDefault();dropZone.classList.add('over');}));
+['dragleave','drop'].forEach(ev=>dropZone.addEventListener(ev,e=>{e.preventDefault();dropZone.classList.remove('over');}));
+dropZone.addEventListener('drop',e=>handleFile(e.dataTransfer.files[0]));
+
+/* ---------- submit ---------- */
+document.getElementById('pocForm').addEventListener('submit',e=>{
+  e.preventDefault();
+  const f=e.target;
+
+  // collect recipe
+  const recipe=[];
+  rowsEl.querySelectorAll('.row-grid').forEach(r=>{
+    const v=r.querySelector('[data-variety]').value.trim();
+    const q=r.querySelector('[data-qty]').value;
+    if(v&&q) recipe.push({variety:v, qty:parseInt(q,10)});
+  });
+
+  const payload={
+    profile:{
+      company:f.company.value, website:f.website.value,
+      contact:f.contact.value, role:f.role.value,
+      email:f.email.value, phone:f.phone.value,
+      bizType:(f.bizType.value||''), locations:f.locations.value,
+      country:f.country.value, weeklyVolume:f.volume.value
+    },
+    item:{
+      name:f.itemName.value, sku:f.sku.value,
+      recipe, totalStems:recipe.reduce((a,b)=>a+b.qty,0),
+      imageName, notes:f.notes.value
+    },
+    submittedAt:new Date().toISOString()
+  };
+
+  /* === WIRE BACKEND HERE (Lovable) ===
+     await fetch('/api/poc', {method:'POST', body: JSON.stringify(payload)})
+     or insert into Supabase. The image is in `imageDataUrl` (base64). */
+  console.log('FloraBot POC payload:', payload);
+
+  renderConfirmation(payload);
+});
+
+function renderConfirmation(p){
+  document.getElementById('pocForm').classList.add('hidden');
+  const recipeHtml=p.item.recipe.map(r=>
+    `<div class="flex justify-between py-1.5 border-b" style="border-color:var(--line)">
+       <span>${r.variety}</span><span class="font-mono">×${r.qty}</span></div>`).join('');
+  document.getElementById('specSheet').innerHTML=`
+    <div>
+      <p class="label mb-3">Operation</p>
+      <div class="space-y-1 text-[15px]">
+        <div><span class="text-[rgba(22,32,26,.5)]">Company:</span> ${p.profile.company}</div>
+        <div><span class="text-[rgba(22,32,26,.5)]">Contact:</span> ${p.profile.contact} ${p.profile.role?'· '+p.profile.role:''}</div>
+        <div><span class="text-[rgba(22,32,26,.5)]">Type:</span> ${p.profile.bizType||'—'} · ${p.profile.locations} location(s)</div>
+        <div><span class="text-[rgba(22,32,26,.5)]">Region:</span> ${p.profile.country||'—'}</div>
+      </div>
+    </div>
+    <div>
+      <p class="label mb-3">Item Spec — ${p.item.sku}</p>
+      <div class="flex gap-4 mb-3">
+        ${imageDataUrl?`<div class="w-24 h-24 rounded-sm bg-cover bg-center border" style="border-color:var(--line-strong);background-image:url(${imageDataUrl})"></div>`:''}
+        <div class="font-display text-lg font-semibold">${p.item.name}</div>
+      </div>
+      ${recipeHtml}
+      <div class="flex justify-between pt-2 font-mono font-semibold" style="color:var(--green)">
+        <span>TOTAL STEMS</span><span>${p.item.totalStems}</span></div>
+    </div>`;
+  document.getElementById('confirm').classList.remove('hidden');
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+document.getElementById('resetBtn').addEventListener('click',()=>location.reload());
+</script>
+</body>
+</html>
