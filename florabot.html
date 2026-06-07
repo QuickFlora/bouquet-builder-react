@@ -549,7 +549,17 @@ function buildFeeders(){
     }
     // pick-station group (holds the presented stem) + overhead vision camera
     const pg=new THREE.Group();pg.position.set(sx,DISC_Y+DISC_T/2+0.012,sz);scene.add(pg);
-    const camB=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.04,0.05),mat('#16302B',0.5,0.3));camB.position.set(cx,0.55,cz);camB.castShadow=true;scene.add(camB);
+    // vision camera on a floor-standing pole (clear of the arm sweep) aimed down at the pick station
+    const camMat=mat('#16302B',0.5,0.3), poleMat=mat('#c7ced2',0.4,0.7), dk=mat('#2b3a35',0.5,0.4);
+    const ox=Math.sin(ang), oz=Math.cos(ang);            // outward from base (away from robot)
+    const px=cx+0.30*ox, pz=cz+0.30*oz, poleTop=0.56, poleH=poleTop-FLOOR_Y;
+    const foot=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.08,0.02,20),dk);foot.position.set(px,FLOOR_Y+0.01,pz);foot.castShadow=true;foot.receiveShadow=true;scene.add(foot);
+    const pole=new THREE.Mesh(new THREE.CylinderGeometry(0.013,0.013,poleH,16),poleMat);pole.position.set(px,FLOOR_Y+poleH/2,pz);pole.castShadow=true;scene.add(pole);
+    const br=new THREE.Mesh(new THREE.BoxGeometry(0.02,0.02,0.1),poleMat);br.position.set(px-0.045*ox,poleTop,pz-0.045*oz);br.rotation.y=ang;br.castShadow=true;scene.add(br);
+    const camG=new THREE.Group();camG.position.set(px-0.09*ox,poleTop,pz-0.09*oz);
+    camG.add(new THREE.Mesh(new THREE.BoxGeometry(0.08,0.06,0.06),camMat));
+    const lens=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.023,0.03,16),dk);lens.rotation.x=Math.PI/2;lens.position.z=0.045;camG.add(lens);
+    camG.children.forEach(c=>c.castShadow=true);camG.lookAt(sx,0.13,sz);scene.add(camG);
     feeders.push({ang,cx,cz,station:[sx,GRAB_Y,sz],disc,arms,pickGroup:pg,pickStem:null,targetRot:0,curRot:0,picks:0});
   }
 }
