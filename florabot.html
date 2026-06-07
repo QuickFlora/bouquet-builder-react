@@ -596,7 +596,7 @@ function buildConveyor(){
   // moving belt surface (scrolling stripe texture)
   const c=document.createElement('canvas');c.width=c.height=64;const g2=c.getContext('2d');
   g2.fillStyle='#3f6f9e';g2.fillRect(0,0,64,64);g2.fillStyle='#356088';for(let i=0;i<64;i+=16)g2.fillRect(0,i,64,7);
-  beltTex=new THREE.CanvasTexture(c);beltTex.wrapS=beltTex.wrapT=THREE.RepeatWrapping;beltTex.repeat.set(1,36);
+  beltTex=new THREE.CanvasTexture(c);beltTex.wrapS=beltTex.wrapT=THREE.RepeatWrapping;beltTex.repeat.set(1,36);beltTex.encoding=THREE.sRGBEncoding;
   const top=new THREE.Mesh(new THREE.PlaneGeometry(W,L),new THREE.MeshStandardMaterial({map:beltTex,roughness:0.55,metalness:0.0}));
   top.rotation.x=-Math.PI/2;top.position.set(CX,0.0005,CZ);top.receiveShadow=true;scene.add(top);
   [-1,1].forEach(s=>{const rail=new THREE.Mesh(new THREE.BoxGeometry(0.02,0.05,L),steel);rail.position.set(CX+s*(W/2+0.012),-0.008,CZ);rail.castShadow=true;scene.add(rail);});
@@ -604,13 +604,77 @@ function buildConveyor(){
     [-1,1].forEach(sx=>{const leg=new THREE.Mesh(new THREE.BoxGeometry(0.03,legH,0.03),steel);leg.position.set(CX+sx*(W/2-0.02),FLOOR_Y+legH/2,z);leg.castShadow=true;scene.add(leg);});
   }
 }
+/* ---- warehouse environment: IBL env map, room, glossy marked floor, racks, props ---- */
+function envTexture(){
+  const c=document.createElement('canvas');c.width=256;c.height=128;const x=c.getContext('2d');
+  const g=x.createLinearGradient(0,0,0,128);
+  g.addColorStop(0,'#ffffff');g.addColorStop(0.42,'#eef3f0');g.addColorStop(0.5,'#d3dbd6');g.addColorStop(1,'#a9b3ae');
+  x.fillStyle=g;x.fillRect(0,0,256,128);
+  x.fillStyle='rgba(255,255,255,0.95)';for(let i=0;i<5;i++)x.fillRect(0,6+i*5,256,2);
+  const t=new THREE.CanvasTexture(c);t.mapping=THREE.EquirectangularReflectionMapping;return t;
+}
+function floorTexture(){
+  const c=document.createElement('canvas');c.width=c.height=1024;const x=c.getContext('2d');
+  x.fillStyle='#e7ece8';x.fillRect(0,0,1024,1024);
+  x.strokeStyle='rgba(150,162,156,0.25)';x.lineWidth=2;
+  for(let i=0;i<=1024;i+=128){x.beginPath();x.moveTo(i,0);x.lineTo(i,1024);x.stroke();x.beginPath();x.moveTo(0,i);x.lineTo(1024,i);x.stroke();}
+  x.fillStyle='#e7c33c';x.fillRect(96,0,26,1024);x.fillStyle='#222';x.fillRect(122,0,6,1024);   // safety lane
+  x.strokeStyle='#5e8a3b';x.lineWidth=12;x.strokeRect(380,300,300,420);                          // green work zone
+  const t=new THREE.CanvasTexture(c);t.encoding=THREE.sRGBEncoding;return t;
+}
+function logoTexture(){
+  const c=document.createElement('canvas');c.width=512;c.height=256;const x=c.getContext('2d');
+  x.fillStyle='#7fae4e';for(let i=0;i<10;i++){const a=i*Math.PI/5;x.beginPath();x.ellipse(150+Math.cos(a)*46,92+Math.sin(a)*46,15,26,a,0,7);x.fill();}
+  x.fillStyle='#4f7a32';x.beginPath();x.arc(150,92,30,0,7);x.fill();
+  x.font='800 90px -apple-system,Segoe UI,Roboto,sans-serif';x.textAlign='left';
+  x.fillStyle='#5e8a3b';x.fillText('FLORA',230,120);x.fillStyle='#9cc06a';x.fillText('.BOT',230,210);
+  const t=new THREE.CanvasTexture(c);t.encoding=THREE.sRGBEncoding;return t;
+}
+function buildWarehouse(){
+  const fy=FLOOR_Y, xH=3.4, zMin=-5.2, zMax=3.2, ceil=2.15;
+  const wallH=ceil-fy, midY=fy+wallH/2, zLen=zMax-zMin, zMid=(zMax+zMin)/2;
+  const wallMat=()=>{const m=mat('#d7ddd8',0.95,0);m.side=THREE.DoubleSide;return m;};
+  const wall=(w,h,p,ry)=>{const m=new THREE.Mesh(new THREE.PlaneGeometry(w,h),wallMat());m.position.set(p[0],p[1],p[2]);if(ry)m.rotation.y=ry;m.receiveShadow=true;scene.add(m);};
+  wall(xH*2,wallH,[0,midY,zMin],0); wall(xH*2,wallH,[0,midY,zMax],Math.PI);
+  wall(zLen,wallH,[-xH,midY,zMid],Math.PI/2); wall(zLen,wallH,[xH,midY,zMid],-Math.PI/2);
+  const ceilM=new THREE.Mesh(new THREE.PlaneGeometry(xH*2,zLen),mat('#e7ebe8',0.97,0));ceilM.rotation.x=Math.PI/2;ceilM.position.set(0,ceil,zMid);scene.add(ceilM);
+  // overhead LED light strips + soft fill
+  const led=new THREE.MeshStandardMaterial({color:0xffffff,emissive:0xffffff,emissiveIntensity:1.4,roughness:1});
+  for(let z=-4.4;z<=2;z+=1.5){[-0.7,0.9].forEach(lx=>{const b=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.05,1.15),led);b.position.set(lx,ceil-0.04,z);scene.add(b);});}
+  const fill=new THREE.PointLight(0xffffff,0.4,14);fill.position.set(0.1,ceil-0.25,-1.2);scene.add(fill);
+  // branded back wall
+  const logo=new THREE.Mesh(new THREE.PlaneGeometry(2.6,1.3),new THREE.MeshStandardMaterial({map:logoTexture(),transparent:true,roughness:0.95}));
+  logo.position.set(-0.3,fy+1.35,zMin+0.03);scene.add(logo);
+  // storage racks along the back wall
+  const rack=(cx,cz)=>{const post=mat('#b59040',0.5,0.3),bc=['#c08a4a','#9aa0a4','#7fa86a'];const Wd=1.25,Dp=0.55,Ht=1.95;
+    [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx,sz])=>{const p=new THREE.Mesh(new THREE.BoxGeometry(0.05,Ht,0.05),post);p.position.set(cx+sx*Wd/2,fy+Ht/2,cz+sz*Dp/2);p.castShadow=true;scene.add(p);});
+    for(let l=0;l<3;l++){const sh=new THREE.Mesh(new THREE.BoxGeometry(Wd,0.03,Dp),mat('#909792',0.6,0.2));sh.position.set(cx,fy+0.55+l*0.62,cz);sh.castShadow=true;sh.receiveShadow=true;scene.add(sh);
+      for(let b=0;b<3;b++){const x=new THREE.Mesh(new THREE.BoxGeometry(0.32,0.3,0.4),mat(bc[(l+b)%3],0.85,0));x.position.set(cx-Wd/2+0.26+b*0.38,fy+0.55+l*0.62+0.17,cz);x.castShadow=true;scene.add(x);}}};
+  rack(-2.3,zMin+0.5); rack(-0.6,zMin+0.5); rack(1.1,zMin+0.5);
+  // pallets with cargo
+  const pallet=(cx,cz)=>{const pl=new THREE.Mesh(new THREE.BoxGeometry(0.72,0.08,0.52),mat('#9c7b46',0.85,0));pl.position.set(cx,fy+0.04,cz);pl.castShadow=true;pl.receiveShadow=true;scene.add(pl);
+    const cg=new THREE.Mesh(new THREE.BoxGeometry(0.6,0.42,0.44),mat('#c2b89a',0.85,0));cg.position.set(cx,fy+0.29,cz);cg.castShadow=true;scene.add(cg);};
+  pallet(2.5,-3.6);pallet(2.5,-2.6);pallet(-2.7,-1.8);
+  // simplified background cobot cells down the line (beside the belt)
+  const miniCell=(cz)=>{const ped=mat('#c7ced2',0.4,0.6),grn=mat('#9cc089',0.5,0.2);
+    const col=new THREE.Mesh(new THREE.BoxGeometry(0.13,-fy,0.13),ped);col.position.set(0,fy/2,cz);col.castShadow=true;scene.add(col);
+    const up=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,0.42,12),grn);up.position.set(0,0.2,cz);up.castShadow=true;scene.add(up);
+    const fo=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.34,12),grn);fo.position.set(0.16,0.38,cz);fo.rotation.z=Math.PI/2.4;fo.castShadow=true;scene.add(fo);
+    const cab=new THREE.Mesh(new THREE.BoxGeometry(0.18,0.28,0.16),grn);cab.position.set(0,fy+0.16,cz+0.34);cab.castShadow=true;scene.add(cab);};
+  miniCell(-2.5);miniCell(-3.7);
+  // guard railing along the aisle
+  const rmat=mat('#e1b84a',0.5,0.4);
+  for(let z=-3.8;z<=0.9;z+=1.1){const p=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.9,10),rmat);p.position.set(1.75,fy+0.45,z);p.castShadow=true;scene.add(p);}
+  const rail=new THREE.Mesh(new THREE.BoxGeometry(0.03,0.045,4.8),rmat);rail.position.set(1.75,fy+0.85,-1.4);scene.add(rail);
+}
 function initCell3d(){
   if(cell3dReady||!window.THREE||!cellHost)return;
   const W=cellHost.clientWidth||860,H=480;
-  scene=new THREE.Scene();scene.background=new THREE.Color('#f3f7f5');
+  scene=new THREE.Scene();scene.background=new THREE.Color('#dde4df');scene.fog=new THREE.Fog(0xdde4df,3.6,12);
   camera=new THREE.PerspectiveCamera(44,W/H,0.1,50);camera.position.set(2.05,1.5,2.4);camera.lookAt(-0.05,0.05,0.05);
   renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));renderer.setSize(W,H);
   renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.autoClear=false;
+  renderer.outputEncoding=THREE.sRGBEncoding;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.15;
   // corner XYZ orientation gizmo (rendered in a small viewport, synced to the camera)
   gizmoScene=new THREE.Scene();gizmoCam=new THREE.PerspectiveCamera(45,1,0.1,10);
   gizmoScene.add(new THREE.AxesHelper(1));
@@ -635,10 +699,14 @@ function initCell3d(){
   const grid=new THREE.GridHelper(2,20,0x6b8f7e,0xd2ddd6);grid.position.y=0.001;aids.add(grid);
   aids.add(new THREE.AxesHelper(0.4));
   aids.visible=false;scene.add(aids);
-  scene.add(new THREE.HemisphereLight(0xffffff,0x9fb2a8,0.75));
-  const dir=new THREE.DirectionalLight(0xffffff,0.95);dir.position.set(1.4,2.1,1.1);dir.castShadow=true;
-  dir.shadow.mapSize.set(2048,2048);Object.assign(dir.shadow.camera,{near:0.5,far:11,left:-3.4,right:3.4,top:3.4,bottom:-3.4});scene.add(dir);
-  const floor=new THREE.Mesh(new THREE.PlaneGeometry(7,7),mat('#eef2ef',0.96,0));floor.rotation.x=-Math.PI/2;floor.position.y=FLOOR_Y;floor.receiveShadow=true;scene.add(floor);
+  scene.add(new THREE.HemisphereLight(0xffffff,0x9fb2a8,0.9));
+  const dir=new THREE.DirectionalLight(0xffffff,1.15);dir.position.set(1.4,2.4,1.1);dir.castShadow=true;
+  dir.shadow.mapSize.set(2048,2048);dir.shadow.bias=-0.0004;Object.assign(dir.shadow.camera,{near:0.5,far:12,left:-3.6,right:3.6,top:3.6,bottom:-3.6});scene.add(dir);
+  try{const pm=new THREE.PMREMGenerator(renderer);scene.environment=pm.fromEquirectangular(envTexture()).texture;}catch(e){}
+  const ft=floorTexture();
+  const floor=new THREE.Mesh(new THREE.PlaneGeometry(9,9),new THREE.MeshStandardMaterial({map:ft,roughness:0.3,metalness:0.0,envMapIntensity:0.85}));
+  floor.rotation.x=-Math.PI/2;floor.position.y=FLOOR_Y;floor.receiveShadow=true;scene.add(floor);
+  buildWarehouse();
   buildStand();
   scene.add(buildArm());
   buildFeeders();
