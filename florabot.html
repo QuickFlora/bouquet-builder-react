@@ -125,6 +125,7 @@
   .viewbar{position:absolute;top:22px;right:22px;display:flex;gap:5px;z-index:6}
   .viewbar button{border:1px solid var(--line);background:rgba(255,255,255,.85);color:var(--ink);font-weight:700;font-size:11.5px;padding:5px 9px;border-radius:7px;cursor:pointer}
   .viewbar button:hover{border-color:var(--green-m);color:var(--green)}
+  .floramark{position:absolute;left:14px;bottom:14px;z-index:7;pointer-events:none;opacity:.95;background:rgba(255,255,255,.5);border-radius:9px;padding:5px 9px;line-height:0}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -616,6 +617,16 @@ function initCell3d(){
   gizmoScene.add(new THREE.AxesHelper(1));
   gizmoScene.add(axisLabel('X','#d9482f',[1.3,0,0]));gizmoScene.add(axisLabel('Y','#2f9e44',[0,1.3,0]));gizmoScene.add(axisLabel('Z','#3b6fd6',[0,0,1.3]));
   cellHost.innerHTML='';cellHost.appendChild(renderer.domElement);
+  // FloraBot watermark — DOM overlay (stays fixed in the bottom-left regardless of 3D zoom/orbit, incl. fullscreen)
+  cellHost.style.position='relative';
+  const wm=document.createElement('div');wm.className='floramark';
+  wm.innerHTML='<svg width="134" height="34" viewBox="0 0 134 34" xmlns="http://www.w3.org/2000/svg">'+
+    '<g transform="translate(15,16)"><g fill="#7fae4e">'+
+    [0,45,90,135,180,225,270,315].map(a=>'<ellipse rx="1.6" ry="3" transform="rotate('+a+') translate(0,-5)"/>').join('')+
+    '</g><circle r="3.4" fill="#4f7a32"/></g>'+
+    '<g fill="#5e8a3b" transform="translate(23,6)"><rect x="0" y="3" width="6" height="2.4" rx="1"/><rect x="5" y="0" width="2.4" height="4" rx="1"/><rect x="5" y="6" width="2.4" height="4" rx="1"/></g>'+
+    '<text x="36" y="22" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-weight="800" font-size="16" letter-spacing="-0.3"><tspan fill="#5e8a3b">FLORA</tspan><tspan fill="#9cc06a">.BOT</tspan></text></svg>';
+  cellHost.appendChild(wm);
   // orbit controls (drag to rotate, scroll to zoom) — renders on change so no idle loop needed
   if(THREE.OrbitControls){controls=new THREE.OrbitControls(camera,renderer.domElement);
     controls.target.set(-0.05,0.05,0.05);controls.enableDamping=false;controls.update();
