@@ -572,9 +572,8 @@ function makeVase(px,py,pz){
     [0.049,0.154],[0.067,0.176],[0.063,0.186]];
   const pts=prof.map(p=>new THREE.Vector2(p[0],p[1]));
   const geo=new THREE.LatheGeometry(pts,64);
-  const glass=new THREE.MeshStandardMaterial({color:0xdfeaf0,roughness:0.07,metalness:0.0,
-    transparent:true,opacity:0.5,side:THREE.DoubleSide});
-  const body=new THREE.Mesh(geo,glass);body.receiveShadow=true;g.add(body);
+  const ceramic=new THREE.MeshStandardMaterial({color:0xeef1ec,roughness:0.45,metalness:0.04,side:THREE.DoubleSide});
+  const body=new THREE.Mesh(geo,ceramic);body.castShadow=true;body.receiveShadow=true;g.add(body);   /* opaque: hides stems below the rim */
   return g;
 }
 /* ---- robot pedestal: T-slot column + wheeled base + green control cabinet (arm mounts on top at y=0) ---- */
@@ -593,17 +592,18 @@ function buildStand(){
 /* ---- blue conveyor under the vase: belt top at y=0, stainless frame + legs to the floor; scrolls while running ---- */
 function buildConveyor(){
   const steel=mat('#c7ced2',0.4,0.7), legH=0-FLOOR_Y;
-  const CX=0.44, CZ=0.10, W=0.34, L=1.7;
+  const CX=0.44, CZ=-1.5, W=0.34, L=5.1;   /* 3x longer warehouse line, receding away from camera */
   const body=new THREE.Mesh(new THREE.BoxGeometry(W,0.03,L),mat('#2f5f8e',0.5,0.1));body.position.set(CX,-0.016,CZ);body.castShadow=true;body.receiveShadow=true;scene.add(body);
   // moving belt surface (scrolling stripe texture)
   const c=document.createElement('canvas');c.width=c.height=64;const g2=c.getContext('2d');
   g2.fillStyle='#3f6f9e';g2.fillRect(0,0,64,64);g2.fillStyle='#356088';for(let i=0;i<64;i+=16)g2.fillRect(0,i,64,7);
-  beltTex=new THREE.CanvasTexture(c);beltTex.wrapS=beltTex.wrapT=THREE.RepeatWrapping;beltTex.repeat.set(1,12);
+  beltTex=new THREE.CanvasTexture(c);beltTex.wrapS=beltTex.wrapT=THREE.RepeatWrapping;beltTex.repeat.set(1,36);
   const top=new THREE.Mesh(new THREE.PlaneGeometry(W,L),new THREE.MeshStandardMaterial({map:beltTex,roughness:0.55,metalness:0.0}));
   top.rotation.x=-Math.PI/2;top.position.set(CX,0.0005,CZ);top.receiveShadow=true;scene.add(top);
-  // side rails + legs
   [-1,1].forEach(s=>{const rail=new THREE.Mesh(new THREE.BoxGeometry(0.02,0.05,L),steel);rail.position.set(CX+s*(W/2+0.012),-0.008,CZ);rail.castShadow=true;scene.add(rail);});
-  [[-1,-1],[-1,1],[1,-1],[1,1]].forEach(([sx,sz])=>{const leg=new THREE.Mesh(new THREE.BoxGeometry(0.03,legH,0.03),steel);leg.position.set(CX+sx*(W/2-0.02),FLOOR_Y+legH/2,CZ+sz*(L/2-0.12));leg.castShadow=true;scene.add(leg);});
+  for(let z=CZ-L/2+0.15; z<=CZ+L/2-0.15; z+=0.9){   /* leg pairs down the length */
+    [-1,1].forEach(sx=>{const leg=new THREE.Mesh(new THREE.BoxGeometry(0.03,legH,0.03),steel);leg.position.set(CX+sx*(W/2-0.02),FLOOR_Y+legH/2,z);leg.castShadow=true;scene.add(leg);});
+  }
 }
 function initCell3d(){
   if(cell3dReady||!window.THREE||!cellHost)return;
@@ -638,7 +638,7 @@ function initCell3d(){
   aids.visible=false;scene.add(aids);
   scene.add(new THREE.HemisphereLight(0xffffff,0x9fb2a8,0.75));
   const dir=new THREE.DirectionalLight(0xffffff,0.95);dir.position.set(1.4,2.1,1.1);dir.castShadow=true;
-  dir.shadow.mapSize.set(2048,2048);Object.assign(dir.shadow.camera,{near:0.5,far:9,left:-2.6,right:2.6,top:2.6,bottom:-2.6});scene.add(dir);
+  dir.shadow.mapSize.set(2048,2048);Object.assign(dir.shadow.camera,{near:0.5,far:11,left:-3.4,right:3.4,top:3.4,bottom:-3.4});scene.add(dir);
   const floor=new THREE.Mesh(new THREE.PlaneGeometry(7,7),mat('#eef2ef',0.96,0));floor.rotation.x=-Math.PI/2;floor.position.y=FLOOR_Y;floor.receiveShadow=true;scene.add(floor);
   buildStand();
   scene.add(buildArm());
@@ -728,8 +728,8 @@ function step(ts){
   if(!t0)t0=ts;
   if(conveying){
     const e=easi(Math.min(1,(ts-conveyT0)/(1400/SPEED)));
-    if(fullVase)fullVase.position.z=0.06-e*0.9;        /* completed vase travels down the line */
-    bouquetGroup.position.z=0.78-e*0.72;               /* empty vase rides in to the same work position */
+    if(fullVase)fullVase.position.z=0.06-e*1.4;        /* completed vase travels down the line */
+    bouquetGroup.position.z=0.9-e*0.84;                /* empty vase rides in to the same work position */
     renderCell();
     if(e>=1){
       if(fullVase){scene.remove(fullVase);fullVase=null;}
@@ -754,7 +754,7 @@ function step(ts){
     if(phaseI>=PHASES.length){phaseI=0;
       if(placed>=stemsToBuild.length){   /* vase full: hand it to the belt, bring an empty one in behind it */
         fullVase=bouquetGroup;
-        bouquetGroup=new THREE.Group();bouquetGroup.position.set(0.44,0,0.78);bouquetGroup.add(makeVase(0,0,0));scene.add(bouquetGroup);
+        bouquetGroup=new THREE.Group();bouquetGroup.position.set(0.44,0,0.9);bouquetGroup.add(makeVase(0,0,0));scene.add(bouquetGroup);
         conveying=true;conveyT0=ts;onVision('done');
       }
     }
