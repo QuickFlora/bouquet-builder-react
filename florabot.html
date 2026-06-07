@@ -375,9 +375,8 @@ function pvResize(){if(!pvR)return;const host=document.getElementById('bouquetPr
 function updatePreview(){if(!pvBq)return;
   for(let i=pvBq.children.length-1;i>=0;i--)pvBq.remove(pvBq.children[i]);
   const stems=expandStems(),slots=pyramidSlots(stems.length);
-  stems.forEach((id,i)=>{const sl=slots[i]||{x:0,y:0.15,z:0,a:0,r:0};
-    const fm=flowerMesh(PARTS[id].type,PARTS[id].color);fm.position.set(sl.x,sl.y,sl.z);
-    const lean=sl.r*3.2;fm.rotation.set(Math.sin(sl.a)*lean,0,-Math.cos(sl.a)*lean);fm.scale.setScalar(0.9);pvBq.add(fm);});
+  stems.forEach((id,i)=>{const sl=slots[i]||{a:0,r:0};
+    const fm=flowerMesh(PARTS[id].type,PARTS[id].color);placeInVase(fm,sl);pvBq.add(fm);});
 }
 function pvLoop(){pvRAF=requestAnimationFrame(pvLoop);if(!pvR)return;if(pvCtl)pvCtl.update();renderPreview();}
 function renderPreview(){if(!pvR)return;const host=document.getElementById('bouquetPreview');const W=host.clientWidth||280,H=host.clientHeight||264;
@@ -657,6 +656,13 @@ function axisLabel(t,color,pos){const c=document.createElement('canvas');c.width
   x.fillStyle=color;x.font='bold 46px sans-serif';x.textAlign='center';x.textBaseline='middle';x.fillText(t,32,34);
   const tex=new THREE.CanvasTexture(c);const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,depthTest:false,depthWrite:false}));
   sp.position.set(pos[0],pos[1],pos[2]);sp.scale.setScalar(0.55);return sp;}
+function placeInVase(fm,sl){   /* stem base low & clustered inside the (opaque) vase; bloom fans above the rim */
+  const baseR=0.016;
+  fm.position.set(Math.cos(sl.a||0)*baseR, 0.02, Math.sin(sl.a||0)*baseR);
+  const lean=0.12+(sl.r||0)*2.6;
+  fm.rotation.set(Math.sin(sl.a||0)*lean,0,-Math.cos(sl.a||0)*lean);
+  fm.scale.setScalar(0.85);
+}
 function setView(name){if(!camera||!controls)return;const t=controls.target,d=camera.position.distanceTo(t);
   const v=({iso:[1.4,0.95,1.6],front:[0,0.25,1],side:[1,0.25,0.02],top:[0.001,1,0.001]})[name]||[1.4,0.95,1.6];
   const n=Math.hypot(v[0],v[1],v[2]);camera.position.set(t.x+v[0]/n*d,t.y+v[1]/n*d,t.z+v[2]/n*d);controls.update();renderCell();}
@@ -697,9 +703,8 @@ function pyramidSlots(n){const s=[];if(n<=0)return s;
     for(let k=0;k<c;k++){const a=(k/c)*Math.PI*2 + ti*0.6;s.push({x:Math.cos(a)*r,y:y,z:Math.sin(a)*r,a:a,r:r});idx++;}}
   return s;}
 function addBouquetFlower(idx){const id=stemsToBuild[idx];if(!id||!cell3dReady)return;
-  const sl=pSlots[idx]||{x:0,y:0.15,z:0,a:0,r:0};const fm=flowerMesh(PARTS[id].type,PARTS[id].color);
-  fm.position.set(sl.x,sl.y,sl.z);const lean=sl.r*3.2;fm.rotation.set(Math.sin(sl.a)*lean,0,-Math.cos(sl.a)*lean);
-  fm.userData.flower=true;fm.scale.setScalar(0.9);bouquetGroup.add(fm);}
+  const sl=pSlots[idx]||{a:0,r:0};const fm=flowerMesh(PARTS[id].type,PARTS[id].color);
+  placeInVase(fm,sl);fm.userData.flower=true;bouquetGroup.add(fm);}
 function attachCarried(id){if(!cell3dReady)return;carriedGroup=flowerMesh(PARTS[id].type,PARTS[id].color);
   carriedGroup.rotation.x=Math.PI;carriedGroup.scale.setScalar(0.55/ARM_S);   /* match the picked stem size, counter the arm's scale */
   /* grip the MIDDLE of the stem (bloom upright, lower stem hanging below the jaws) */
