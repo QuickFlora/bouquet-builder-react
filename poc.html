@@ -413,10 +413,44 @@ document.getElementById('pocForm').addEventListener('submit',e=>{
     submittedAt:new Date().toISOString()
   };
 
-  /* === WIRE BACKEND HERE (Lovable) ===
-     await fetch('/api/poc', {method:'POST', body: JSON.stringify(payload)})
-     or insert into Supabase. The image is in `imageDataUrl` (base64). */
-  console.log('FloraBot POC payload:', payload);
+  /* === GoHighLevel lead proxy (AWS Lambda Function URL) ===
+     The Lambda holds the GHL token server-side and creates the contact
+     (tagged "florabot lead"). Paste the Function URL below. */
+  const GHL_PROXY_URL = 'https://k4hn272p53rbmgymsgrktbgete0zqktw.lambda-url.us-east-1.on.aws/';
+
+  const lead = {
+    first_name: (payload.profile.contact||'').split(' ')[0] || '',
+    last_name:  (payload.profile.contact||'').split(' ').slice(1).join(' ') || '',
+    full_name:  payload.profile.contact,
+    email:      payload.profile.email,
+    phone:      payload.profile.phone,
+    company:    payload.profile.company,
+    website:    payload.profile.website,
+    role:       payload.profile.role,
+    business_type:  payload.profile.bizType,
+    locations:      payload.profile.locations,
+    country:        payload.profile.country,
+    weekly_volume:  payload.profile.weeklyVolume,
+    item_name:   payload.item.name,
+    sku:         payload.item.sku,
+    total_stems: payload.item.totalStems,
+    recipe:      payload.item.recipe.map(r=>`${r.variety} x${r.qty}`).join(', '),
+    recipe_json: JSON.stringify(payload.item.recipe),
+    image_name:  payload.item.imageName||'',
+    notes:       payload.item.notes,
+    source:      'FloraBot POC Request Form',
+    submitted_at: payload.submittedAt
+  };
+
+  if(GHL_PROXY_URL){
+    fetch(GHL_PROXY_URL,{
+      method:'POST',
+      headers:{'Content-Type':'text/plain'},   /* text/plain = simple request, no CORS preflight */
+      body:JSON.stringify(lead)
+    }).catch(err=>console.warn('GHL proxy POST failed:',err));
+  } else {
+    console.log('FloraBot POC lead (no proxy URL set yet):', lead);
+  }
 
   renderConfirmation(payload);
 });
