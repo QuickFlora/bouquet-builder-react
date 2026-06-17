@@ -17,7 +17,7 @@ export default function Inventory(){
       <h1>Inventory status</h1><p className="sub">Live availability by item and location — replicated from the POS page (InventoryByWarehouse).</p>
       <div className="card" style={{padding:'14px 16px',marginBottom:14}}>
         <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:12,marginBottom:12}}>
-          <div><label>Delivery date</label><input type="date" defaultValue="2026-06-12"/></div>
+          <div><label>Delivery date</label><input type="date" defaultValue="2026-06-17"/></div>
           <div><label>Location / Farm</label><select defaultValue="Berkeley Florist Supply"><option>All locations</option><option>Berkeley Florist Supply</option></select></div>
           <div><label>Item search</label><input value={q} onChange={e=>{setQ(e.target.value);setPage(1)}} placeholder="Item ID or name"/></div>
         </div>
